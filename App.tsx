@@ -6,6 +6,7 @@ import Home from './src/screens/Home';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PaperProvider } from 'react-native-paper';
+import CaptureScreen from './src/screens/CaptureScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -22,6 +23,7 @@ const App = () => {
         >
           <Stack.Screen name="Landing" component={LandingScreen} />
           <Stack.Screen name="Home" component={Home} />
+          <Stack.Screen name="Capture" component={CaptureScreen} />
         </Stack.Navigator>
         </SafeAreaView>
       </NavigationContainer>

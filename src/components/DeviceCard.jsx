@@ -1,8 +1,9 @@
+import { NavigationContainer } from '@react-navigation/native';
 import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert, Animated } from 'react-native';
 
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-const DeviceCard = ({ device, onRefresh, onCapture, onDelete, textColor = 'red' }) => {
+const DeviceCard = ({ device, onRefresh, onCapture, onDelete, textColor = 'red',navigation }) => {
     const screenWidth = Dimensions.get('window').width;
     const iconSize = screenWidth > 600 ? 35 : 24;
     const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -112,9 +113,15 @@ const DeviceCard = ({ device, onRefresh, onCapture, onDelete, textColor = 'red' 
                     
                     <TouchableOpacity 
                         style={[styles.button, styles.captureButton]}
-                        onPress={() => onCapture(device._id, device.devicename)}
+                        onPress={() => navigation.navigate('Capture', {
+                            screen: 'Capture',
+                            
+                                deviceId: device._id,
+                                deviceName: device.devicename
+                            
+                        })}
                     >
-                        <Icon name="camera" size={iconSize} color="#FFFFFF" />
+                        <Icon name="eye" size={iconSize} color="#FFFFFF" />
                     </TouchableOpacity>
                 </View>
             </Animated.View>

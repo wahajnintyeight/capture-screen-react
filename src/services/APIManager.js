@@ -156,11 +156,22 @@ class APIManager {
     async captureScreen(deviceId, deviceName) {
         try {
             // post request
-            const res = await this.axiosInstance.post(API_URL + API_VER + '/capture-screen')
+            const res = await this.axiosInstance.post(API_URL + API_VER + '/capture-screen',{deviceId:deviceId,deviceName:deviceName})
             return res.data;
         } catch (err){
             console.log("Error",err)
             return res.data;
+        }
+    }
+
+    async getDeviceInfo(deviceId) {
+        try {
+            const res = await this.axiosInstance.get(API_URL + API_VER + '/device?deviceId=' + deviceId)
+            console.log("Device Info:", res.data)
+            return res.data;
+        } catch (err) {
+            console.log("Error while getting device info:", err.response)
+            throw err;
         }
     }
     

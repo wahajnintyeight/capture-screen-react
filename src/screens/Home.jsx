@@ -7,9 +7,7 @@ import { FAB, Portal, Snackbar } from 'react-native-paper';
 import { Animated, Easing } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-const IconFallback = ({ name, size, color, style }) => (
-    <View style={[{ width: size, height: size }, style]} />
-);
+
 
 const Home = ({ navigation }) => {
     const [devices, setDevices] = useState([]);
@@ -23,7 +21,6 @@ const Home = ({ navigation }) => {
     const [snackbarVisible, setSnackbarVisible] = useState(false);
     const [snackbarMessage, setSnackbarMessage] = useState('');
     
-    const Icon =  IconFallback;
 
     console.log("Home Screen")
     useEffect(() => {
@@ -155,7 +152,8 @@ const Home = ({ navigation }) => {
         
         try {
             const response = await apiManager.scanDevices();
-            if (response?.code === 1000) {
+            console.log(response.code)
+            if (response?.code === 1041) {
                 showSnackbar('Scan completed successfully');
                 fetchDevices();
             } else {
@@ -209,6 +207,7 @@ const Home = ({ navigation }) => {
                                 onDelete={() => handleDeleteDevice(device._id)}
                                 isCapturing={loadingDeviceId === device._id}
                                 isDeleting={deletingDeviceId === device._id}
+                                navigation={navigation}
                             />
                         ))
                     ) : (
@@ -230,7 +229,7 @@ const Home = ({ navigation }) => {
                             }}
                         >
                             <Icon 
-                                name={isScanning ? "refresh" : "refresh"} 
+                                name={isScanning ? 'refreshing' : 'refresh'} 
                                 size={size} 
                                 color={color} 
                             />
