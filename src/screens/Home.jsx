@@ -1,30 +1,85 @@
-import { View, Text, StyleSheet, ScrollView, Dimensions, useColorScheme, TouchableOpacity } from "react-native"
+import { View, Text, StyleSheet, ScrollView, Dimensions, useColorScheme, TouchableOpacity, Alert, RefreshControl, ActivityIndicator } from "react-native"
 import apiManager from "../services/APIManager";
-import { useEffect, useState } from "react";
-import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState, useCallback, useRef } from "react";
+// import { Ionicons } from '@expo/vector-icons';
+import DeviceCard from '../components/DeviceCard';
+import { FAB, Portal, Snackbar } from 'react-native-paper';
+import { Animated, Easing } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const IconFallback = ({ name, size, color, style }) => (
     <View style={[{ width: size, height: size }, style]} />
 );
 
-const Home = () => {
+const Home = ({ navigation }) => {
     const [devices, setDevices] = useState([]);
+    const [refreshing, setRefreshing] = useState(false);
     const colorScheme = useColorScheme();
+    const [isLoading, setIsLoading] = useState(false);
+    const [loadingDeviceId, setLoadingDeviceId] = useState(null);
+    const [deletingDeviceId, setDeletingDeviceId] = useState(null);
+    const [isScanning, setIsScanning] = useState(false);
+    const spinValue = useRef(new Animated.Value(0)).current;
+    const [snackbarVisible, setSnackbarVisible] = useState(false);
+    const [snackbarMessage, setSnackbarMessage] = useState('');
     
-    const Icon = Ionicons || IconFallback;
+    const Icon =  IconFallback;
 
+    console.log("Home Screen")
     useEffect(() => {
         fetchDevices();
     }, [])
 
+    useEffect(() => {
+        if (isScanning) {
+            Animated.loop(
+                Animated.timing(spinValue, {
+                    toValue: 1,
+                    duration: 2000,
+                    easing: Easing.linear,
+                    useNativeDriver: true,
+                })
+            ).start();
+        } else {
+            spinValue.setValue(0);
+        }
+    }, [isScanning]);
+
+    const spin = spinValue.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['0deg', '360deg']
+    });
+
     const fetchDevices = async () => {
+        setIsLoading(true);
         try {
             const response = await apiManager.getDevices();
-            if (response.code && response.result) {
-                setDevices(response.result.devices);
+            if (response?.code && response.result) {
+                if (!response.result.devices || response.result.devices.length === 0) {
+                    Alert.alert(
+                        "No Devices Found",
+                        "There are currently no devices available.",
+                        [{ text: "OK" }]
+                    );
+                }
+                // console.log("Devices:", response.result.devices.map(device => device))
+                setDevices(response.result.devices || []);
+            } else {
+                Alert.alert(
+                    "Error",
+                    "Failed to fetch devices. Please try again later.",
+                    [{ text: "OK" }]
+                );
             }
         } catch (error) {
             console.error("Error fetching devices:", error);
+            Alert.alert(
+                "Error",
+                "Failed to fetch devices. Please try again later.",
+                [{ text: "OK" }]
+            );
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -42,70 +97,168 @@ const Home = () => {
     const bgColor = colorScheme === 'dark' ? '#1A1A1A' : '#F0E6FF';
     const cardBgColor = colorScheme === 'dark' ? '#2D2D2D' : '#FFFFFF';
 
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        try {
+            await fetchDevices();
+        } finally {
+            setRefreshing(false);
+        }
+    }, []);
+
+    const handlePing = useCallback(async (deviceId) => {
+        setLoadingDeviceId(deviceId);
+        try {
+            await apiManager.pingDevice(deviceId);
+        } finally {
+            setLoadingDeviceId(null);
+        }
+    }, []);
+
+    const handleOnCapture = useCallback(async (deviceId, deviceName) => {
+        setLoadingDeviceId(deviceId);
+        console.log("Capturing screen for device:", deviceId, deviceName)
+        try {
+            await apiManager.captureScreen(deviceId, deviceName);
+        } finally {
+            setLoadingDeviceId(null);
+        }
+    }, []);
+
+    const handleDeleteDevice = async (deviceId) => {
+        setDeletingDeviceId(deviceId);
+        try {
+            console.log("Attempting to delete device:", deviceId)
+            const response = await apiManager.deleteDevice(deviceId);
+            if (response && response.code === 1077) {
+                fetchDevices();
+            } else {
+                Alert.alert("Error", "Failed to delete device");
+            }
+        } catch (error) {
+            Alert.alert("Error", "Failed to delete device");
+        } finally {
+            setDeletingDeviceId(null);
+        }
+    };
+
+    const showSnackbar = (message) => {
+        setSnackbarMessage(message);
+        setSnackbarVisible(true);
+    };
+
+    const handleScan = async () => {
+        if (isScanning) return;
+        
+        setIsScanning(true);
+        showSnackbar('Scanning for new devices...');
+        
+        try {
+            const response = await apiManager.scanDevices();
+            if (response?.code === 1000) {
+                showSnackbar('Scan completed successfully');
+                fetchDevices();
+            } else {
+                showSnackbar('Scan failed');
+            }
+        } catch (error) {
+            console.error('Scan error:', error);
+            showSnackbar('Failed to scan devices');
+        } finally {
+            setIsScanning(false);
+        }
+    };
+
     return (
-        // <Text>Home</Text>
-        <ScrollView style={[styles.container, { backgroundColor: bgColor }]}>
-            <View style={styles.header}>
-                <Text style={[styles.title, { color: textColor }]}>My Devices</Text>
-                <TouchableOpacity 
-                    style={styles.refreshButton}
-                    onPress={fetchDevices}
-                >
-                    <Icon name="refresh" size={24} color={textColor} />
-                </TouchableOpacity>
-            </View>
-            <View style={styles.gridContainer}>
-                {devices.map((device, index) => (
-                    <View key={index} style={[styles.card, { backgroundColor: cardBgColor }]}>
-                        <View style={styles.cardHeader}>
-                            <View style={styles.deviceInfo}>
-                                <Icon 
-                                    name="hardware-chip-outline" 
-                                    size={24} 
-                                    color={textColor}
-                                    style={styles.deviceIcon}
-                                />
-                                <Text style={[styles.deviceName, { color: textColor }]}>
-                                    {device.deviceName}
-                                </Text>
-                            </View>
-                            <View style={[
-                                styles.badge,
-                                device.isonline ? styles.onlineBadge : styles.offlineBadge
-                            ]}>
-                                <Icon 
-                                    name={device.isonline ? "radio" : "radio-outline"} 
-                                    size={16} 
-                                    color={device.isonline ? "#2E7D32" : "#C62828"}
-                                    style={styles.statusIcon}
-                                />
-                                <Text style={[
-                                    styles.badgeText,
-                                    { color: device.isonline ? "#2E7D32" : "#C62828" }
-                                ]}>
-                                    {device.isonline ? "Online" : "Offline"}
-                                </Text>
-                            </View>
+        <>
+            <ScrollView 
+                style={[styles.container, { backgroundColor: bgColor }]}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#7B1FA2']} // Android
+                        tintColor={textColor} // iOS
+                        title="Pull to refresh" // iOS
+                        titleColor={textColor} // iOS
+                    />
+                }
+            >
+                <View style={styles.header}>
+                    <Text style={[styles.title, { color: textColor }]}>My Devices</Text>
+                    {isLoading && (
+                        <ActivityIndicator 
+                            size="small" 
+                            color="#7B1FA2"
+                            style={styles.headerLoader} 
+                        />
+                    )}
+                </View>
+                <Text style={[styles.deviceCount, { color: textColor }]}>
+                    Total Devices: {devices.length}
+                </Text>
+                <View style={styles.gridContainer}>
+                    {devices.length > 0 ? (
+                        devices.map((device, index) => (
+                            <DeviceCard
+                                key={index}
+                                device={device}
+                                textColor={textColor}
+                                onRefresh={() => handlePing(device._id)}
+                                onCapture={() => handleOnCapture(device._id,device.devicename)}
+                                onDelete={() => handleDeleteDevice(device._id)}
+                                isCapturing={loadingDeviceId === device._id}
+                                isDeleting={deletingDeviceId === device._id}
+                            />
+                        ))
+                    ) : (
+                        <View style={styles.noDevicesContainer}>
+                            <Text style={[styles.noDevicesText, { color: textColor }]}>
+                                No devices available
+                            </Text>
                         </View>
-                        <View style={styles.cardContent}>
-                            <View style={styles.infoRow}>
-                                <Icon name="time-outline" size={16} color={textColor} />
-                                <Text style={[styles.dateText, { color: textColor }]}>
-                                    Created: {formatDate(device.createdAt)}
-                                </Text>
-                            </View>
-                            <TouchableOpacity 
-                                style={styles.captureButton}
-                                onPress={() => {/* Handle capture */}}
-                            >
-                                <Icon name="camera" size={20} color="#FFFFFF" />
-                                <Text style={styles.captureButtonText}>Capture</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                ))}
-            </View>
-        </ScrollView>
+                    )}
+                </View>
+            </ScrollView>
+
+            <Portal>
+                <FAB
+                    icon={({ size, color }) => (
+                        <Animated.View
+                            style={{
+                                transform: isScanning ? [{ rotate: spin }] : [],
+                            }}
+                        >
+                            <Icon 
+                                name={isScanning ? "refresh" : "refresh"} 
+                                size={size} 
+                                color={color} 
+                            />
+                        </Animated.View>
+                    )}
+                    style={styles.fab}
+                    color="white"
+                    customSize={56}
+                    label={isScanning ? "Scanning..." : "Scan"}
+                    extended={isScanning}
+                    onPress={handleScan}
+                    loading={isScanning}
+                    disabled={isScanning}
+                    animated={true}
+                />
+            </Portal>
+
+            <Snackbar
+                visible={snackbarVisible}
+                onDismiss={() => setSnackbarVisible(false)}
+                duration={3000}
+                action={{
+                    label: 'Dismiss',
+                    onPress: () => setSnackbarVisible(false),
+                }}>
+                {snackbarMessage}
+            </Snackbar>
+        </>
     )
 }
 
@@ -124,21 +277,23 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
     },
-    refreshButton: {
-        padding: 8,
+    deviceCount: {
+        fontSize: 16,
+        fontWeight: '500',
+        marginBottom: 10,
+        paddingHorizontal: 16,
     },
     gridContainer: {
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'space-between',
+        paddingHorizontal: 8,
     },
     card: {
         borderRadius: 16,
         padding: 16,
         marginBottom: 16,
-        width: Dimensions.get('window').width > 600 
-            ? (Dimensions.get('window').width - 48) / 3 
-            : (Dimensions.get('window').width - 36) / 2,
+        width: (Dimensions.get('window').width - 48) / 2,
         shadowColor: '#000',
         shadowOffset: {
             width: 0,
@@ -211,7 +366,29 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '500',
         marginLeft: 8,
-    }
+    },
+    noDevicesContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        paddingVertical: 40,
+    },
+    noDevicesText: {
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    headerLoader: {
+        marginLeft: 10,
+    },
+    fab: {
+        position: 'absolute',
+        margin: 16,
+        right: 0,
+        bottom: 0,
+        backgroundColor: '#7B1FA2', // Your primary color
+        borderRadius: 28,
+    },
 });
 
 export default Home;

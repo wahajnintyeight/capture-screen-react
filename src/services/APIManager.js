@@ -105,31 +105,65 @@ class APIManager {
         }
     }
 
-    async startTracking(tripId, currentLat, currentLng) {
-        console.log(currentLat, currentLng)
-        try {
-            const res = await this.axiosInstance.post(API_URL + '/startTracking', {
-                tripId: tripId,
-                currentLat: currentLat,
-                currentLng: currentLng
-            })
-            if (res) {
-                return res.data;
-            }
-        } catch (err) {
-            console.log("Error while starting tracking:", err.response)
-        }
-    }
-
     async getDevices() {
         try {
             const res = await this.axiosInstance.get(API_URL+API_VER + '/devices')
+            console.log("Devices:", res.data)
+            if(res.data.code == 1006) {
+                await this.createSession();
+                return this.getDevices();
+            }
             return res.data;
         } catch (err) {
             console.log("Error while fetching devices:", err.response)
         }
     }
-     
+
+
+    async deleteDevice(deviceId) {
+        try {
+            const res = await this.axiosInstance.delete(API_URL + API_VER + '/device',{data:{_id:deviceId}})
+            console.log("Delete Device Response:", res.data)
+            return res.data;
+        } catch (err) {
+            console.log("Error while deleting device:", err.response)
+        }
+    }
+
+    async pingDevice(deviceId) {
+        try {
+            const res = await this.axiosInstance.get(API_URL + API_VER + '/ping/' + deviceId)
+            console.log("Ping Device:", res.data)
+            return res.data;
+        } catch (err) {
+            console.log("Error while pinging device:", err.response)
+        }
+    }
+
+    async scanDevices() {
+        try {
+            const res = await this.axiosInstance.post(API_URL + API_VER + '/scan-devices')
+            if(res.data.code == 1072){ //scan device event sent
+
+                return await this.getDevices();
+            }
+            return res.data;
+        } catch (err) {
+            console.log("Error while scanning devices:", err.response)
+        }
+    }
+
+    async captureScreen(deviceId, deviceName) {
+        try {
+            // post request
+            const res = await this.axiosInstance.post(API_URL + API_VER + '/capture-screen')
+            return res.data;
+        } catch (err){
+            console.log("Error",err)
+            return res.data;
+        }
+    }
+    
     verifyUserId(userId) {
         console.log("User ID Verification:", userId)
         if (userId === undefined || userId == null || userId == "") {

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import { Screen } from 'react-native-screens';
 const LandingScreen = ({ navigation }) => {
   console.log('LandingScreen');
   
@@ -28,12 +29,13 @@ const LandingScreen = ({ navigation }) => {
         <TouchableOpacity style={styles.button} onPress={() => {
           
           console.log('Start Capturing');
-          navigation.navigate('Home');
+          navigation.navigate('Home',{screen: 'Home'});
         }}>
           <Text style={styles.buttonText}>Start Capturing</Text>
         </TouchableOpacity>
       </View>
     </LinearGradient>
+
   );
 };
 
