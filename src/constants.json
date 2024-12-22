@@ -1,4 +1,5 @@
 {
-    "API_URL": "https://5d7d-103-115-199-92.ngrok-free.app",
-    "API_VER": "/v2/api"
+    "API_URL": "https://1e78-103-115-199-92.ngrok-free.app",
+    "API_VER": "/v2/api",
+    "SSE_URL" : "1hkzk2uod1.loclx.io"
 }
