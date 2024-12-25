@@ -1,9 +1,11 @@
-import { View, Text, StyleSheet, ScrollView, Dimensions, useColorScheme, TouchableOpacity, Alert, RefreshControl, ActivityIndicator } from "react-native"
+import { View, Text, StyleSheet, ScrollView, Dimensions, useColorScheme, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Image } from "react-native"
 import apiManager from "../services/APIManager";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { FAB, Portal, Snackbar, Card, ProgressBar } from 'react-native-paper';
 import { Animated, Easing } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import SSEManager from '../services/SSEManager';
+import ImageViewing from 'react-native-image-viewing';
 
 const CaptureScreen = ({ navigation,route }) => {
     const colorScheme = useColorScheme();
@@ -14,8 +16,19 @@ const CaptureScreen = ({ navigation,route }) => {
 
 
     const [deviceInfo, setDeviceInfo] = useState(null);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [captureStatus, setCaptureStatus] = useState('idle'); // 'idle', 'capturing', 'success', 'error'
+    const [captureMessage, setCaptureMessage] = useState('');
+    const [connectionStatus, setConnectionStatus] = useState(null);
+    const [deviceStats, setDeviceStats] = useState({
+        memoryUsage: 'N/A',
+        diskUsage: 'N/A',
+        osName: 'N/A',
+        imageBlob: null,
+        lastImage: null
+    });
+    const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
 
     const deviceId = route?.params?.deviceId;
     const deviceName = route?.params?.deviceName;
@@ -37,19 +50,102 @@ const CaptureScreen = ({ navigation,route }) => {
         }
     };
 
+    // Add event listener for SSE events
+    useEffect(() => {
+        const handleEvents = (data) => {
+            if (data.event === 'loading_status') {
+                setIsLoading(data.isLoading);
+                return;
+            }
+
+            // Handle connection status events
+            if (data.event === 'connection_status') {
+                setConnectionStatus({
+                    status: data.status,
+                    message: data.message
+                });
+                return;
+            }
+
+            // Handle device data updates
+            if (data.type === 'device_data') {
+                const deviceData = data.message;
+                
+                // Update device stats
+                setDeviceStats({
+                    memoryUsage: deviceData.memoryUsage || 'N/A',
+                    diskUsage: deviceData.diskUsage || 'N/A',
+                    osName: deviceData.osName || 'N/A',
+                    imageBlob: deviceData.imageBlob,
+                    lastImage: deviceData.lastImage
+                });
+
+                // Update device info
+                if (deviceData.isOnline !== undefined) {
+                    setDeviceInfo(prevInfo => ({
+                        ...prevInfo,
+                        isonline: deviceData.isOnline,
+                        lastonline: deviceData.lastOnline,
+                        devicename: deviceData.deviceName
+                    }));
+                }
+
+                return;
+            }
+
+            // Handle existing capture events
+            const { event, message, deviceName } = data;
+            switch (event) {
+                case 'capture_start':
+                    setCaptureStatus('capturing');
+                    setCaptureMessage('Screen capture in progress...');
+                    break;
+
+                case 'capture_complete':
+                    setCaptureStatus('success');
+                    setCaptureMessage(`Capture completed for ${deviceName}`);
+                    // Refresh device info after successful capture
+                    fetchDeviceInfo(deviceId);
+                    break;
+
+                case 'capture_failed':
+                    setCaptureStatus('error');
+                    setCaptureMessage(`Capture failed: ${message}`);
+                    break;
+            }
+        };
+
+        const listenerId = `capture_${deviceId}`;
+        SSEManager.addListener(listenerId, handleEvents);
+
+        return () => {
+            SSEManager.removeListener(listenerId);
+        };
+    }, [deviceId]);
 
     const handleCapture = async (deviceId) => {
-        setIsLoading(true);
-        setError(null);
         try {
+            setCaptureStatus('capturing');
+            setCaptureMessage('Initiating screen capture...');
+            setIsLoading(true);
+            setError(null);
+
             const response = await apiManager.captureScreen(deviceId, deviceName);
+            console.log('Capture API response:', response);
+
+            if (!response?.code) {
+                throw new Error('Invalid response from capture API');
+            }
+
         } catch (err) {
-            console.error('Error capturing screen:', err);
-            setError('An error occurred while capturing screen');
+            console.error('Error initiating screen capture:', err);
+            setCaptureStatus('error');
+            setCaptureMessage('Failed to initiate screen capture');
+            setError('Failed to initiate screen capture');
         } finally {
             setIsLoading(false);
         }
-    }
+    };
 
     useEffect(() => {
         if (deviceId) {
@@ -81,13 +177,85 @@ const CaptureScreen = ({ navigation,route }) => {
         }
     };
 
+    // Add status indicator in the UI
+    const renderCaptureStatus = () => {
+        if (captureStatus === 'idle') return null;
+
+        const statusColors = {
+            capturing: '#FFA000',
+            success: '#4CAF50',
+            error: '#FF5252'
+        };
+
+        return (
+            <View style={[styles.statusContainer, { backgroundColor: statusColors[captureStatus] }]}>
+                <Text style={styles.statusText}>{captureMessage}</Text>
+            </View>
+        );
+    };
+
+    const renderStatus = () => {
+        if (connectionStatus) {
+            const statusColors = {
+                connected: '#4CAF50',
+                disconnected: '#FFA000',
+                error: '#FF5252'
+            };
+
+            return (
+                <View style={[styles.statusContainer, { backgroundColor: statusColors[connectionStatus.status] }]}>
+                    <Text style={styles.statusText}>{connectionStatus.message}</Text>
+                </View>
+            );
+        }
+
+        return renderCaptureStatus(); // Your existing capture status renderer
+    };
+
+    const renderImage = () => {
+        if (deviceStats.lastImage) {
+            return (
+                <TouchableOpacity 
+                    onPress={() => setIsImageViewerVisible(true)}
+                    style={styles.imageContainer}
+                >
+                    <Image 
+                        source={{ uri: deviceStats.lastImage }}
+                        style={styles.image}
+                        resizeMode="contain"
+                        onError={(e) => {
+                            console.error('Image loading error:', e.nativeEvent.error);
+                        }}
+                        onLoad={() => console.log('Image loaded successfully')}
+                    />
+                </TouchableOpacity>
+            );
+        }
+        
+        return (
+            <View style={styles.noImageContainer}>
+                <Icon name="image-off" size={48} color="#7B1FA2" />
+                <Text style={[styles.noImageText, { color: textColor }]}>
+                    No screenshot available
+                </Text>
+            </View>
+        );
+    };
+
     return (
         <View style={[styles.container, { backgroundColor: bgColor }]}>
+            {renderStatus()}
+            
             {isLoading ? (
-                <ActivityIndicator size="large" color="#7B1FA2" style={styles.loader} />
+                <View style={styles.loaderContainer}>
+                    <ActivityIndicator size="large" color="#7B1FA2" />
+                    <Text style={[styles.loaderText, { color: textColor }]}>
+                        Loading device data...
+                    </Text>
+                </View>
             ) : (
                 <>
-                    {/* Device Name Header */}
+                    {/* Device Name Header - Sticky */}
                     <View style={styles.headerContainer}>
                         <Icon name="desktop-tower-monitor" size={28} color="#7B1FA2" />
                         <Text style={[styles.deviceName, { color: textColor }]}>
@@ -95,70 +263,104 @@ const CaptureScreen = ({ navigation,route }) => {
                         </Text>
                     </View>
 
-                    {/* Image Viewer Row */}
-                    <View style={styles.imageViewerContainer}>
-                        <Card style={styles.imageCard}>
-                            <Card.Cover 
-                                source={{ uri: 'placeholder_image_url' }}
+                    {/* Image Viewer Section - Sticky */}
+                    <View style={styles.stickySection}>
+                        <View style={styles.imageViewerContainer}>
+                           
+                            {/* <Image 
+                                source={{ uri: 'https://res.cloudinary.com/djvpc14v7/image/upload/v1735144729/screen_captures/DESKTOP-SQ3S8SE_2024-12-25T21:38:48%2B05:00.jpg' }}
                                 style={styles.image}
-                            />
-                        </Card>
+                            /> */}
+
+                                {renderImage()}
+                            
+                        </View>
                     </View>
 
-                    {/* Stats Row */}
-                    <View style={styles.statsContainer}>
-                        <View style={styles.statsRow}>
-                            {/* Online Status */}
-                            <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
-                                <Icon 
-                                    name={deviceInfo?.isonline ? "access-point" : "access-point-off"} 
-                                    size={24} 
-                                    color={deviceInfo?.isonline ? "#4CAF50" : "#FF5252"} 
-                                />
-                                <Text style={[styles.statLabel, { color: textColor }]}>Status</Text>
-                                <Text style={[styles.statValue, { color: deviceInfo?.isonline ? "#4CAF50" : "#FF5252" }]}>
-                                    {deviceInfo?.isonline ? 'Online' : 'Offline'}
-                                </Text>
-                            </View>
-
-                            {/* Last Online */}
-                            <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
-                                <Icon name="clock-outline" size={24} color="#7B1FA2" />
-                                <Text style={[styles.statLabel, { color: textColor }]}>Last Online</Text>
-                                <Text style={[styles.statValue, { color: textColor }]}>
-                                    {deviceInfo?.lastonline ? formatLastOnline(deviceInfo.lastonline) : 'N/A'}
-                                </Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.statsRow}>
-                            {/* Created At */}
-                            <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
-                                <Icon name="calendar" size={24} color="#7B1FA2" />
-                                <Text style={[styles.statLabel, { color: textColor }]}>Registered</Text>
-                                <Text style={[styles.statValue, { color: textColor }]}>
-                                    {deviceInfo?.createdat ? new Date(deviceInfo.createdat).toLocaleDateString() : 'N/A'}
-                                </Text>
-                            </View>
-
-                            {/* New Storage Card */}
-                            <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
-                                <Icon name="harddisk" size={24} color="#7B1FA2" />
-                                <Text style={[styles.statLabel, { color: textColor }]}>Storage</Text>
-                                <Text style={[styles.statValue, { color: textColor, marginBottom: 8 }]}>
-                                    {storageData.getFormattedUsed()}
-                                </Text>
-                                <View style={styles.progressBarContainer}>
-                                    <ProgressBar
-                                        progress={storageData.getPercentage()}
-                                        color="#7B1FA2"
-                                        style={styles.progressBar}
+                    {/* Scrollable Stats Section */}
+                    <ScrollView 
+                        style={styles.scrollContainer}
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.scrollContent}
+                        bounces={false}
+                        scrollEventThrottle={16}
+                    >
+                        <View style={styles.statsContainer}>
+                            <View style={styles.statsRow}>
+                                {/* Online Status */}
+                                <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
+                                    <Icon 
+                                        name={deviceInfo?.isonline ? "access-point" : "access-point-off"} 
+                                        size={24} 
+                                        color={deviceInfo?.isonline ? "#4CAF50" : "#FF5252"} 
                                     />
+                                    <Text style={[styles.statLabel, { color: textColor }]}>Status</Text>
+                                    <Text style={[styles.statValue, { color: deviceInfo?.isonline ? "#4CAF50" : "#FF5252" }]}>
+                                        {deviceInfo?.isonline ? 'Online' : 'Offline'}
+                                    </Text>
+                                </View>
+
+                                {/* Last Online */}
+                                <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
+                                    <Icon name="clock-outline" size={24} color="#7B1FA2" />
+                                    <Text style={[styles.statLabel, { color: textColor }]}>Last Online</Text>
+                                    <Text style={[styles.statValue, { color: textColor }]}>
+                                        {deviceInfo?.lastonline ? formatLastOnline(deviceInfo.lastonline) : 'N/A'}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            <View style={styles.statsRow}>
+                                {/* Created At */}
+                                <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
+                                    <Icon name="calendar" size={24} color="#7B1FA2" />
+                                    <Text style={[styles.statLabel, { color: textColor }]}>Registered</Text>
+                                    <Text style={[styles.statValue, { color: textColor }]}>
+                                        {deviceInfo?.createdat ? new Date(deviceInfo.createdat).toLocaleDateString() : 'N/A'}
+                                    </Text>
+                                </View>
+
+                                {/* New Storage Card */}
+                                <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
+                                    <Icon name="harddisk" size={24} color="#7B1FA2" />
+                                    <Text style={[styles.statLabel, { color: textColor }]}>Storage</Text>
+                                    <Text style={[styles.statValue, { color: textColor, marginBottom: 8 }]}>
+                                        {storageData.getFormattedUsed()}
+                                    </Text>
+                                    <View style={styles.progressBarContainer}>
+                                        <ProgressBar
+                                            progress={storageData.getPercentage()}
+                                            color="#7B1FA2"
+                                            style={styles.progressBar}
+                                        />
+                                    </View>
+                                </View>
+                            </View>
+
+                            <View style={styles.statsRow}>
+                                {/* OS Info Card */}
+                                <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
+                                    <Icon name="desktop-classic" size={24} color="#7B1FA2" />
+                                    <Text style={[styles.statLabel, { color: textColor }]}>Operating System</Text>
+                                    <Text style={[styles.statValue, { color: textColor }]}>
+                                        {deviceStats.osName}
+                                    </Text>
+                                </View>
+
+                                {/* Memory Usage Card */}
+                                <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
+                                    <Icon name="memory" size={24} color="#7B1FA2" />
+                                    <Text style={[styles.statLabel, { color: textColor }]}>Memory Usage</Text>
+                                    <Text style={[styles.statValue, { color: textColor }]}>
+                                        {deviceStats.memoryUsage}
+                                    </Text>
                                 </View>
                             </View>
                         </View>
+                    </ScrollView>
 
-                        {/* Capture Button */}
+                    {/* Capture Button - Fixed at bottom */}
+                    <View style={[styles.captureButtonContainer, { backgroundColor: bgColor }]}>
                         <TouchableOpacity 
                             style={styles.captureButton}
                             onPress={() => {handleCapture(deviceId)}}
@@ -172,6 +374,20 @@ const CaptureScreen = ({ navigation,route }) => {
             {error && (
                 <Text style={styles.errorText}>{error}</Text>
             )}
+            
+            {/* New Image Viewer */}
+            <ImageViewing
+                images={[{ uri: deviceStats.lastImage }]}
+                imageIndex={0}
+                visible={isImageViewerVisible}
+                onRequestClose={() => setIsImageViewerVisible(false)}
+                backgroundColor="rgba(0,0,0,0.9)"
+                FooterComponent={({ imageIndex }) => (
+                    <View style={styles.imageViewerFooter}>
+                        <Text style={styles.imageViewerText}>Screenshot</Text>
+                    </View>
+                )}
+            />
         </View>
     );
 };
@@ -179,23 +395,57 @@ const CaptureScreen = ({ navigation,route }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        padding: 16,
+    },
+    headerContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        backgroundColor: 'transparent',
+        zIndex: 1,
+    },
+    stickySection: {
+        backgroundColor: 'transparent',
+        zIndex: 1,
     },
     imageViewerContainer: {
-        flex: 1,
+        height: 250,
+        marginHorizontal: 16,
         marginBottom: 16,
-    },
-    imageCard: {
-        flex: 1,
+        backgroundColor: 'transparent',
         borderRadius: 12,
         overflow: 'hidden',
     },
-    image: {
+    imageCard: {
+        // flex: 1,
+        // borderRadius: 12,
+        // overflow: 'hidden',
+        // backgroundColor: 'transparent',
+    },
+    scrollContainer: {
         flex: 1,
-        resizeMode: 'contain',
+    },
+    scrollContent: {
+        paddingHorizontal: 16,
+        paddingBottom: 80, // Space for capture button
     },
     statsContainer: {
+        paddingTop: 8,
+    },
+    captureButtonContainer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: 16,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(0,0,0,0.1)',
+    },
+    image: {
         flex: 1,
+        width: '100%',
+        height: '100%',
+        backgroundColor: 'transparent',
     },
     statsRow: {
         flexDirection: 'row',
@@ -243,21 +493,19 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginLeft: 8,
     },
-    headerContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-        paddingHorizontal: 8,
-    },
     deviceName: {
         fontSize: 24,
         fontWeight: 'bold',
         marginLeft: 12,
     },
-    loader: {
+    loaderContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    loaderText: {
+        marginTop: 16,
+        fontSize: 16,
     },
     errorText: {
         color: '#FF5252',
@@ -272,6 +520,44 @@ const styles = StyleSheet.create({
         height: 8,
         borderRadius: 4,
     },
+    statusContainer: {
+        padding: 12,
+        borderRadius: 8,
+        marginBottom: 16,
+        opacity: 0.9,
+    },
+    statusText: {
+        color: '#FFFFFF',
+        textAlign: 'center',
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    noImageContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    noImageText: {
+        marginTop: 12,
+        fontSize: 16,
+        textAlign: 'center',
+    },
+    imageContainer: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+    },
+    imageViewerFooter: {
+        height: 64,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    imageViewerText: {
+        color: '#FFF',
+        fontSize: 16,
+    }
 });
 
 export default CaptureScreen;

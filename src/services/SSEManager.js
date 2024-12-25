@@ -1,5 +1,6 @@
 import { SSE_URL } from '../constants.json';
 import { Alert } from 'react-native';
+import EventSource from "react-native-event-source";
 
 class SSEManager {
     static instance = null;
@@ -7,6 +8,9 @@ class SSEManager {
         if (!SSEManager.instance) {
             this.eventSource = null;
             this.listeners = new Map();
+            this.lastEvents = new Map();
+            this.isConnected = false;
+            this.isLoading = true;
             SSEManager.instance = this;
         }
         return SSEManager.instance;
@@ -17,117 +21,160 @@ class SSEManager {
             this.disconnect();
         }
 
-        this.eventSource = new EventSource(`https://${SSE_URL}/events`);
+        this.isLoading = true;
+        this.notifyLoadingState();
 
-        this.eventSource.onopen = () => {
-            console.log('SSE Connection opened');
-        };
+        try {
+            const url = `https://${SSE_URL}/events`;
+            console.log('[SSE] Attempting connection to:', url);
 
-        this.eventSource.onerror = (error) => {
-            console.error('SSE Connection error:', error);
-            this.disconnect();
-            // Attempt to reconnect after 5 seconds
-            setTimeout(() => this.connect(), 5000);
-        };
+            this.eventSource = new EventSource(url);
+            
+            this.eventSource.addEventListener('open', () => {
+                console.log('SSE Connection opened successfully');
+                this.isConnected = true;
+                this.notifyListeners({
+                    event: 'connection_status',
+                    status: 'connected',
+                    message: 'Connected to server'
+                });
+            });
 
-        this.eventSource.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.notifyListeners(data);
-            } catch (error) {
-                console.error('Error parsing SSE message:', error);
-            }
-        };
+            this.eventSource.addEventListener('message', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.isLoading = false;
+                    this.notifyLoadingState();
+                    this.notifyListeners(data);
+                } catch (error) {
+                    console.error('Error parsing SSE message:', error);
+                }
+            });
+
+            this.eventSource.addEventListener('error', (error) => {
+                console.log('[SSE] Connection error:', error);
+                this.isConnected = false;
+                this.isLoading = true;
+                this.notifyLoadingState();
+                
+                this.notifyListeners({
+                    event: 'connection_status',
+                    status: 'error',
+                    message: 'Connection lost. Attempting to reconnect...'
+                });
+            
+                this.disconnect();
+            
+                console.log('[SSE] Scheduling reconnection attempt...');
+                setTimeout(() => {
+                    console.log('[SSE] Attempting to reconnect...');
+                    this.connect();
+                }, 5000);
+            });
+            
+        } catch (error) {
+            console.log('[SSE] Error creating EventSource:', error);
+            this.isConnected = false;
+            this.isLoading = false;
+            this.notifyLoadingState();
+            this.notifyListeners({
+                event: 'connection_status',
+                status: 'error',
+                message: 'Failed to establish connection'
+            });
+        }
+    }
+
+    notifyLoadingState() {
+        this.notifyListeners({
+            event: 'loading_status',
+            isLoading: this.isLoading
+        });
     }
 
     disconnect() {
         if (this.eventSource) {
-            this.eventSource.close();
+            console.log('[SSE] Disconnecting...');
+            try {
+                this.eventSource.close();
+                this.notifyListeners({
+                    event: 'connection_status',
+                    status: 'disconnected',
+                    message: 'Disconnected from server'
+                });
+            } catch (error) {
+                console.error('[SSE] Error during disconnect:', error);
+            }
             this.eventSource = null;
-            console.log('SSE Connection closed');
+            this.isConnected = false;
+            console.log('[SSE] Disconnected');
         }
     }
 
     addListener(id, callback) {
+        console.log('[SSE] Adding listener:', id);
         this.listeners.set(id, callback);
         
         // Connect if this is the first listener
         if (this.listeners.size === 1 && !this.eventSource) {
+            console.log('[SSE] First listener added, initiating connection');
             this.connect();
         }
     }
 
     removeListener(id) {
+        console.log('[SSE] Removing listener:', id);
         this.listeners.delete(id);
         
         // Disconnect if no more listeners
         if (this.listeners.size === 0 && this.eventSource) {
+            console.log('[SSE] No more listeners, disconnecting');
             this.disconnect();
         }
     }
 
     notifyListeners(data) {
-        // Handle the event and show appropriate Alert
-        this.handleEventNotification(data);
-
-        // Notify all listeners as before
-        this.listeners.forEach(callback => {
-            try {
-                callback(data);
-            } catch (error) {
-                console.error('Error in SSE listener callback:', error);
+        // console.log('[SSE] Notifying listeners with data:', data);
+        
+        try {
+            // Store last event for the device
+            if (data.deviceId) {
+                this.lastEvents.set(data.deviceId, {
+                    event: data.event,
+                    timestamp: new Date(),
+                    message: data.message,
+                    imageBlob: data.imageBlob,
+                    lastImage: data.lastImage
+                });
             }
-        });
+
+            // Notify all listeners
+            this.listeners.forEach((callback, id) => {
+                try {
+                    console.log('[SSE] Notifying listener:', id);
+                    callback(data);
+                } catch (error) {
+                    console.error('[SSE] Error in listener callback:', id, error);
+                }
+            });
+        } catch (error) {
+            console.error('[SSE] Error processing event:', error);
+        }
     }
 
-    handleEventNotification(data) {
-        try {
-            const { event, message, deviceName } = data;
-            
-            switch (event) {
-                case 'device_online':
-                    Alert.alert(
-                        "Device Status",
-                        `${deviceName || 'Device'} is now online`
-                    );
-                    break;
-                    
-                case 'device_offline':
-                    Alert.alert(
-                        "Device Status",
-                        `${deviceName || 'Device'} went offline`
-                    );
-                    break;
-                    
-                case 'capture_complete':
-                    Alert.alert(
-                        "Capture Status",
-                        `Capture completed for ${deviceName || 'device'}`
-                    );
-                    break;
-                    
-                case 'capture_failed':
-                    Alert.alert(
-                        "Capture Failed",
-                        `Capture failed for ${deviceName || 'device'}: ${message}`
-                    );
-                    break;
-                    
-                case 'error':
-                    Alert.alert(
-                        "Error",
-                        message || 'An error occurred'
-                    );
-                    break;
-                    
-                default:
-                    if (message) {
-                        Alert.alert("Notification", message);
-                    }
-            }
-        } catch (error) {
-            console.error('Error handling event notification:', error);
-        }
+    // Helper method to check connection status
+    isConnectedToServer() {
+        return this.isConnected;
+    }
+
+    // Helper method to get last event for a device
+    getLastEvent(deviceId) {
+        return this.lastEvents.get(deviceId);
+    }
+
+    // Add method to check loading state
+    isLoadingData() {
+        return this.isLoading;
     }
 }
 
