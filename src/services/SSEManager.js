@@ -43,6 +43,7 @@ class SSEManager {
             this.eventSource.addEventListener('message', (event) => {
                 try {
                     const data = JSON.parse(event.data);
+                    console.log('[SSE] Received data:', data);
                     this.isLoading = false;
                     this.notifyLoadingState();
                     this.notifyListeners(data);

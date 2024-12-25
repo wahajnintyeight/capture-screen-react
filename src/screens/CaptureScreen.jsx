@@ -22,8 +22,8 @@ const CaptureScreen = ({ navigation,route }) => {
     const [captureMessage, setCaptureMessage] = useState('');
     const [connectionStatus, setConnectionStatus] = useState(null);
     const [deviceStats, setDeviceStats] = useState({
-        memoryUsage: 'N/A',
-        diskUsage: 'N/A',
+        memoryUsage: '0 / 1',
+        diskUsage: '0 / 1',
         osName: 'N/A',
         imageBlob: null,
         lastImage: null
@@ -165,15 +165,31 @@ const CaptureScreen = ({ navigation,route }) => {
         return date.toLocaleDateString();
     };
 
-    // Add storage data (you'll need to get this from your API)
+    console.log("deviceStats", deviceStats.diskUsage)
+    // Update the storageData object to use actual device stats
     const storageData = {
-        used: 128, // GB
-        total: 512, // GB
+        used: deviceStats.diskUsage ? Number(deviceStats.diskUsage.split('/')[0].replace(' GiB', '').trim()) : 0,
+        total: deviceStats.diskUsage ? Number(deviceStats.diskUsage.split('/')[1].replace(' GiB', '').trim()) : 1,
         getPercentage: function() {
-            return this.used / this.total;
+            // Convert to a number between 0-1 with fixed precision
+            const percentage = Number((this.used / this.total).toFixed(2));
+            return Math.min(Math.max(percentage, 0), 1);
         },
         getFormattedUsed: function() {
-            return `${this.used}GB / ${this.total}GB`;
+            return deviceStats.diskUsage || 'N/A';
+        }
+    };
+
+    // Add memory usage calculation
+    const memoryData = {
+        used: deviceStats.memoryUsage ? Number(deviceStats.memoryUsage.split('/')[0].replace(' GiB', '').trim()) : 0,
+        total: deviceStats.memoryUsage ? Number(deviceStats.memoryUsage.split('/')[1].replace(' GiB', '').trim()) : 1,
+        getPercentage: function() {
+            const percentage = Number((this.used / this.total).toFixed(2));
+            return Math.min(Math.max(percentage, 0), 1);
+        },
+        getFormattedUsage: function() {
+            return deviceStats.memoryUsage || 'N/A';
         }
     };
 
@@ -340,7 +356,7 @@ const CaptureScreen = ({ navigation,route }) => {
                             <View style={styles.statsRow}>
                                 {/* OS Info Card */}
                                 <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
-                                    <Icon name="desktop-classic" size={24} color="#7B1FA2" />
+                                    <Icon name="microsoft-windows" size={24} color="#7B1FA2" />
                                     <Text style={[styles.statLabel, { color: textColor }]}>Operating System</Text>
                                     <Text style={[styles.statValue, { color: textColor }]}>
                                         {deviceStats.osName}
@@ -351,9 +367,16 @@ const CaptureScreen = ({ navigation,route }) => {
                                 <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
                                     <Icon name="memory" size={24} color="#7B1FA2" />
                                     <Text style={[styles.statLabel, { color: textColor }]}>Memory Usage</Text>
-                                    <Text style={[styles.statValue, { color: textColor }]}>
-                                        {deviceStats.memoryUsage}
+                                    <Text style={[styles.statValue, { color: textColor, marginBottom: 8 }]}>
+                                        {memoryData.getFormattedUsage()}
                                     </Text>
+                                    <View style={styles.progressBarContainer}>
+                                        <ProgressBar
+                                            progress={memoryData.getPercentage()}
+                                            color="#7B1FA2"
+                                            style={styles.progressBar}
+                                        />
+                                    </View>
                                 </View>
                             </View>
                         </View>
