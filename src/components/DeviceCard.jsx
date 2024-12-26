@@ -3,12 +3,43 @@ import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert, Animated } from 'react-native';
 
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+
+const formatTimeAgo = (dateString) => {
+    if (!dateString || dateString === "0001-01-01T00:00:00Z") {
+        return 'Never';
+    }
+
+    console.log(dateString);
+    const now = new Date();
+    const date = new Date(dateString);
+    const seconds = Math.floor((now - date) / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (seconds < 60) {
+        return 'Just now';
+    } else if (minutes < 60) {
+        return `${minutes}m ago`;
+    } else if (hours < 24) {
+        return `${hours}h ago`;
+    } else if (days < 7) {
+        return `${days}d ago`;
+    } else {
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric'
+        });
+    }
+};
+
 const DeviceCard = ({ device, onRefresh, onCapture, onDelete, textColor = 'red',navigation }) => {
     const screenWidth = Dimensions.get('window').width;
     const iconSize = screenWidth > 600 ? 35 : 24;
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const elevationAnim = useRef(new Animated.Value(3)).current;
 
+    console.log('dev',device);
     const handleLongPress = () => {
         Alert.alert(
             "Delete Device",
@@ -102,6 +133,19 @@ const DeviceCard = ({ device, onRefresh, onCapture, onDelete, textColor = 'red',
                     </View>
                 </View>
 
+                {/* Last Seen */}
+                <View style={styles.lastSeenContainer}>
+                    <Icon 
+                        name="clock-outline" 
+                        size={16} 
+                        color="#757575" 
+                        style={styles.clockIcon} 
+                    />
+                    <Text style={styles.lastSeenText}>
+                        Last seen: {formatTimeAgo(device.lastOnline)}
+                    </Text>
+                </View>
+
                 {/* Action Buttons */}
                 <View style={styles.buttonContainer}>
                     <TouchableOpacity 
@@ -115,10 +159,14 @@ const DeviceCard = ({ device, onRefresh, onCapture, onDelete, textColor = 'red',
                         style={[styles.button, styles.captureButton]}
                         onPress={() => navigation.navigate('Capture', {
                             screen: 'Capture',
-                            
-                                deviceId: device._id,
-                                deviceName: device.devicename
-                            
+                            deviceId: device._id,
+                            deviceName: device.devicename,
+                            memoryUsage: device.memoryUsage,
+                            diskUsage: device.diskUsage,
+                            osName: device.osName,
+                            imageBlob: device.imageBlob,
+                            lastImage: device.lastImage,
+                            lastOnline: device.lastOnline
                         })}
                     >
                         <Icon name="eye" size={iconSize} color="#FFFFFF" />
@@ -147,7 +195,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 12,
     },
     deviceName: {
         fontSize: 18,
@@ -170,6 +218,19 @@ const styles = StyleSheet.create({
     statusText: {
         fontSize: 14,
         fontWeight: '500',
+    },
+    lastSeenContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 8,
+        marginBottom: 16,
+    },
+    clockIcon: {
+        marginRight: 6,
+    },
+    lastSeenText: {
+        fontSize: 12,
+        color: '#757575',
     },
     buttonContainer: {
         flexDirection: 'row',

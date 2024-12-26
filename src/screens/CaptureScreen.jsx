@@ -22,11 +22,11 @@ const CaptureScreen = ({ navigation,route }) => {
     const [captureMessage, setCaptureMessage] = useState('');
     const [connectionStatus, setConnectionStatus] = useState(null);
     const [deviceStats, setDeviceStats] = useState({
-        memoryUsage: '0 / 1',
-        diskUsage: '0 / 1',
-        osName: 'N/A',
-        imageBlob: null,
-        lastImage: null
+        memoryUsage: route?.params?.memoryUsage || '0 / 1',
+        diskUsage: route?.params?.diskUsage || '0 / 1',
+        osName: route?.params?.osName || 'N/A',
+        // imageBlob: route?.params?.imageBlob || null,
+        lastImage: route?.params?.lastImage || null
     });
     const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
 
@@ -218,6 +218,20 @@ const CaptureScreen = ({ navigation,route }) => {
                 error: '#FF5252'
             };
 
+            if (connectionStatus.status === 'disconnected' || connectionStatus.status === 'error') {
+                return (
+                    <TouchableOpacity 
+                        style={styles.reconnectStatusButton}
+                        onPress={handleReconnect}
+                    >
+                        <Icon name="refresh" size={20} color="#FFFFFF" />
+                        <Text style={styles.reconnectStatusText}>
+                            Reconnect to Server
+                        </Text>
+                    </TouchableOpacity>
+                );
+            }
+
             return (
                 <View style={[styles.statusContainer, { backgroundColor: statusColors[connectionStatus.status] }]}>
                     <Text style={styles.statusText}>{connectionStatus.message}</Text>
@@ -225,7 +239,7 @@ const CaptureScreen = ({ navigation,route }) => {
             );
         }
 
-        return renderCaptureStatus(); // Your existing capture status renderer
+        return renderCaptureStatus();
     };
 
     const renderImage = () => {
@@ -258,11 +272,43 @@ const CaptureScreen = ({ navigation,route }) => {
         );
     };
 
+    // Add reconnect handler
+    const handleReconnect = () => {
+        SSEManager.connect();
+    };
+
+    // Modify the header section to include the reconnect button
+    const renderHeader = () => (
+        <View style={styles.headerContainer}>
+            <View style={styles.headerLeft}>
+                <TouchableOpacity 
+                    style={styles.backButton}
+                    onPress={() => navigation.goBack()}
+                >
+                    <Icon name="arrow-left" size={24} color="#7B1FA2" />
+                </TouchableOpacity>
+                <Icon name="desktop-tower-monitor" size={28} color="#7B1FA2" />
+                <Text style={[styles.deviceName, { color: textColor }]}>
+                    {deviceInfo?.devicename || 'Unknown Device'}
+                </Text>
+            </View>
+            {!deviceInfo?.isonline && (
+                <TouchableOpacity 
+                    style={styles.reconnectButton}
+                    onPress={handleReconnect}
+                >
+                    <Icon name="refresh" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
+            )}
+        </View>
+    );
+
     return (
         <View style={[styles.container, { backgroundColor: bgColor }]}>
             {renderStatus()}
             
-            {isLoading ? (
+            {/* Only show loading if device is online */}
+            {isLoading && deviceInfo?.isonline ? (
                 <View style={styles.loaderContainer}>
                     <ActivityIndicator size="large" color="#7B1FA2" />
                     <Text style={[styles.loaderText, { color: textColor }]}>
@@ -271,14 +317,7 @@ const CaptureScreen = ({ navigation,route }) => {
                 </View>
             ) : (
                 <>
-                    {/* Device Name Header - Sticky */}
-                    <View style={styles.headerContainer}>
-                        <Icon name="desktop-tower-monitor" size={28} color="#7B1FA2" />
-                        <Text style={[styles.deviceName, { color: textColor }]}>
-                            {deviceInfo?.devicename || 'Unknown Device'}
-                        </Text>
-                    </View>
-
+                    {renderHeader()}
                     {/* Image Viewer Section - Sticky */}
                     <View style={styles.stickySection}>
                         <View style={styles.imageViewerContainer}>
@@ -321,7 +360,7 @@ const CaptureScreen = ({ navigation,route }) => {
                                     <Icon name="clock-outline" size={24} color="#7B1FA2" />
                                     <Text style={[styles.statLabel, { color: textColor }]}>Last Online</Text>
                                     <Text style={[styles.statValue, { color: textColor }]}>
-                                        {deviceInfo?.lastonline ? formatLastOnline(deviceInfo.lastonline) : 'N/A'}
+                                        {deviceInfo?.lastOnline ? formatLastOnline(deviceInfo.lastOnline) : 'N/A'}
                                     </Text>
                                 </View>
                             </View>
@@ -422,10 +461,16 @@ const styles = StyleSheet.create({
     headerContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
         paddingHorizontal: 16,
         paddingVertical: 12,
         backgroundColor: 'transparent',
         zIndex: 1,
+    },
+    headerLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
     },
     stickySection: {
         backgroundColor: 'transparent',
@@ -580,7 +625,55 @@ const styles = StyleSheet.create({
     imageViewerText: {
         color: '#FFF',
         fontSize: 16,
-    }
+    },
+    reconnectButton: {
+        backgroundColor: '#7B1FA2',
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    backButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 8,
+    },
+    reconnectStatusButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#7B1FA2',
+        padding: 12,
+        borderRadius: 8,
+        marginHorizontal: 16,
+        marginBottom: 16,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    reconnectStatusText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '500',
+        marginLeft: 8,
+    },
 });
 
 export default CaptureScreen;
