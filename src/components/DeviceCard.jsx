@@ -43,7 +43,7 @@ const DeviceCard = ({ device, onRefresh, onCapture, onDelete, textColor = 'red',
     const handleLongPress = () => {
         Alert.alert(
             "Delete Device",
-            `Are you sure you want to delete ${device.devicename}?`,
+            `Are you sure you want to delete ${device.deviceName}?`,
             [
                 {
                     text: "Cancel",
@@ -113,22 +113,22 @@ const DeviceCard = ({ device, onRefresh, onCapture, onDelete, textColor = 'red',
                 {/* Header with Name and Status */}
                 <View style={styles.header}>
                     <Text style={[styles.deviceName]}>
-                        {device.devicename}
+                        {device.deviceName}
                     </Text>
 
                     <View style={[
                         styles.statusBadge,
-                        { backgroundColor: device.isonline ? '#E8F5E9' : '#FFEBEE' }
+                        { backgroundColor: device.isOnline ? '#E8F5E9' : '#FFEBEE' }
                     ]}>
                         <View style={[
                             styles.statusDot,
-                            { backgroundColor: device.isonline ? '#2E7D32' : '#C62828' }
+                            { backgroundColor: device.isOnline ? '#2E7D32' : '#C62828' }
                         ]} />
                         <Text style={[
                             styles.statusText,
-                            { color: device.isonline ? '#2E7D32' : '#C62828' }
+                            { color: device.isOnline ? '#2E7D32' : '#C62828' }
                         ]}>
-                            {device.isonline ? 'Online' : 'Offline'}
+                            {device.isOnline ? 'Online' : 'Offline'}
                         </Text>
                     </View>
                 </View>
@@ -160,7 +160,7 @@ const DeviceCard = ({ device, onRefresh, onCapture, onDelete, textColor = 'red',
                         onPress={() => navigation.navigate('Capture', {
                             screen: 'Capture',
                             deviceId: device._id,
-                            deviceName: device.devicename,
+                            deviceName: device.deviceName,
                             memoryUsage: device.memoryUsage,
                             diskUsage: device.diskUsage,
                             osName: device.osName,

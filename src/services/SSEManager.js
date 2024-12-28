@@ -25,7 +25,7 @@ class SSEManager {
         this.notifyLoadingState();
 
         try {
-            const url = `https://${SSE_URL}/events`;
+            const url = `${SSE_URL}/events`;
             console.log('[SSE] Attempting connection to:', url);
 
             this.eventSource = new EventSource(url);
@@ -139,13 +139,15 @@ class SSEManager {
         
         try {
             // Store last event for the device
-            if (data.deviceId) {
-                this.lastEvents.set(data.deviceId, {
-                    event: data.event,
+            console.log("Notify Listeners with data:",data)
+            if (data?.message?.deviceName) {
+                console.log("Setting last event for device:", data.message)
+                this.lastEvents.set(data.message.deviceName, {
+                    event: data.type,
                     timestamp: new Date(),
                     message: data.message,
                     imageBlob: data.imageBlob,
-                    lastImage: data.lastImage
+                    lastImage: data.message.lastImage
                 });
             }
 

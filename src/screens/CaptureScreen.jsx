@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, Dimensions, useColorScheme, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Image } from "react-native"
 import apiManager from "../services/APIManager";
 import { useEffect, useState, useCallback, useRef } from "react";
-import { FAB, Portal, Snackbar, Card, ProgressBar } from 'react-native-paper';
+import { Snackbar, Card, ProgressBar } from 'react-native-paper';
 import { Animated, Easing } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import SSEManager from '../services/SSEManager';
@@ -9,7 +9,7 @@ import ImageViewing from 'react-native-image-viewing';
 
 const CaptureScreen = ({ navigation,route }) => {
     const colorScheme = useColorScheme();
-    console.log("Capture Screen", route)
+    // console.log("Capture Screen", route)
     const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
     const bgColor = colorScheme === 'dark' ? '#1A1A1A' : '#F0E6FF';
     const cardBgColor = colorScheme === 'dark' ? '#2D2D2D' : '#FFFFFF';
@@ -17,6 +17,8 @@ const CaptureScreen = ({ navigation,route }) => {
 
     const [deviceInfo, setDeviceInfo] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isPinging, setIsPinging] = useState(false);
+    const [isCapturing, setIsCapturing] = useState(false);
     const [error, setError] = useState(null);
     const [captureStatus, setCaptureStatus] = useState('idle'); // 'idle', 'capturing', 'success', 'error'
     const [captureMessage, setCaptureMessage] = useState('');
@@ -29,9 +31,14 @@ const CaptureScreen = ({ navigation,route }) => {
         lastImage: route?.params?.lastImage || null
     });
     const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
+    const [pingStatus, setPingStatus] = useState(null);
+    const [showSnackbar, setShowSnackbar] = useState(false);
+    const [snackbarMessage, setSnackbarMessage] = useState('');
 
     const deviceId = route?.params?.deviceId;
     const deviceName = route?.params?.deviceName;
+    const pingAnimationValue = useRef(new Animated.Value(0)).current;
+
     const fetchDeviceInfo = async (deviceId) => {
         setIsLoading(true);
         setError(null);
@@ -53,6 +60,7 @@ const CaptureScreen = ({ navigation,route }) => {
     // Add event listener for SSE events
     useEffect(() => {
         const handleEvents = (data) => {
+            console.log("Event | HandleEvents:",data)
             if (data.event === 'loading_status') {
                 setIsLoading(data.isLoading);
                 return;
@@ -68,9 +76,10 @@ const CaptureScreen = ({ navigation,route }) => {
             }
 
             // Handle device data updates
-            if (data.type === 'device_data') {
+            if (data.type === 'capture_screen') {
                 const deviceData = data.message;
-                
+                console.log("CAPTURE | Device Data:",deviceData)
+
                 // Update device stats
                 setDeviceStats({
                     memoryUsage: deviceData.memoryUsage || 'N/A',
@@ -84,17 +93,53 @@ const CaptureScreen = ({ navigation,route }) => {
                 if (deviceData.isOnline !== undefined) {
                     setDeviceInfo(prevInfo => ({
                         ...prevInfo,
-                        isonline: deviceData.isOnline,
-                        lastonline: deviceData.lastOnline,
-                        devicename: deviceData.deviceName
+                        isOnline: deviceData.isOnline,
+                        lastOnline: deviceData.lastOnline,
+                        deviceName: deviceData.deviceName
                     }));
                 }
 
                 return;
             }
 
+            if (data.type === 'ping_device'){
+                // setPingStatus(data.status);
+
+                const deviceData = data.message;
+                console.log("PING | Device Data:",deviceData)
+                setSnackbarMessage("Device pinged successfully");
+                setShowSnackbar(true);
+
+                // setDeviceStats({
+                //     memoryUsage: deviceData.memoryUsage || 'N/A',
+                //     diskUsage: deviceData.diskUsage || 'N/A',
+                //     osName: deviceData.osName || 'N/A',
+                //     isOnline: deviceData.isOnline,
+                //     lastOnline: deviceData.lastOnline,
+                //     deviceName: deviceData.deviceName
+                // });
+
+                // Update device info
+                if (deviceData.isOnline !== undefined) {
+                    setDeviceInfo(prevInfo => ({
+                        ...prevInfo,
+                        isOnline: deviceData.isOnline,
+                        lastOnline: deviceData.lastOnline,
+                        deviceName: deviceData.deviceName,
+                        memoryUsage: deviceData.memoryUsage,
+                        diskUsage: deviceData.diskUsage,
+                        osName: deviceData.osName
+                    }));
+                }
+
+                setIsPinging(false);
+
+                return;
+            }
+
             // Handle existing capture events
             const { event, message, deviceName } = data;
+            console.log("Event:",event)
             switch (event) {
                 case 'capture_start':
                     setCaptureStatus('capturing');
@@ -124,11 +169,12 @@ const CaptureScreen = ({ navigation,route }) => {
     }, [deviceId]);
 
     const handleCapture = async (deviceId) => {
+        if (!deviceId || isCapturing) return;
+
         try {
+            setIsCapturing(true); // Disable both buttons
             setCaptureStatus('capturing');
             setCaptureMessage('Initiating screen capture...');
-            setIsLoading(true);
-            setError(null);
 
             const response = await apiManager.captureScreen(deviceId, deviceName);
             console.log('Capture API response:', response);
@@ -143,7 +189,7 @@ const CaptureScreen = ({ navigation,route }) => {
             setCaptureMessage('Failed to initiate screen capture');
             setError('Failed to initiate screen capture');
         } finally {
-            setIsLoading(false);
+            setIsCapturing(false); // Re-enable buttons
         }
     };
 
@@ -243,7 +289,7 @@ const CaptureScreen = ({ navigation,route }) => {
     };
 
     const renderImage = () => {
-        if (deviceStats.lastImage) {
+        if (deviceStats.lastImage != null && deviceStats.lastImage != undefined && deviceStats.lastImage != '') {
             return (
                 <TouchableOpacity 
                     onPress={() => setIsImageViewerVisible(true)}
@@ -289,10 +335,10 @@ const CaptureScreen = ({ navigation,route }) => {
                 </TouchableOpacity>
                 <Icon name="desktop-tower-monitor" size={28} color="#7B1FA2" />
                 <Text style={[styles.deviceName, { color: textColor }]}>
-                    {deviceInfo?.devicename || 'Unknown Device'}
+                    {deviceInfo?.deviceName || 'Unknown Device'}
                 </Text>
             </View>
-            {!deviceInfo?.isonline && (
+            {!deviceInfo?.isOnline && (
                 <TouchableOpacity 
                     style={styles.reconnectButton}
                     onPress={handleReconnect}
@@ -303,12 +349,67 @@ const CaptureScreen = ({ navigation,route }) => {
         </View>
     );
 
+    const handlePing = async () => {
+        if (!deviceName || isPinging) return;
+
+        try {
+            setIsPinging(true); // Disable both buttons
+            setPingStatus('pinging');
+
+            // Animation sequence
+            Animated.sequence([
+                Animated.timing(pingAnimationValue, {
+                    toValue: 1,
+                    duration: 1000,
+                    easing: Easing.ease,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pingAnimationValue, {
+                    toValue: 0,
+                    duration: 1000,
+                    easing: Easing.ease,
+                    useNativeDriver: true,
+                })
+            ]).start();
+
+            const response = await apiManager.pingDevice(deviceName);
+            
+            if (response?.code === 1082) { // Assuming 1072 is success code
+                setPingStatus('success');
+                setSnackbarMessage('Device pinged successfully');
+                setShowSnackbar(true);
+            } else {
+                setPingStatus('error');
+                setSnackbarMessage('Failed to ping device');
+                setShowSnackbar(true);
+            }
+        } catch (err) {
+            console.error('Error pinging device:', err);
+            setPingStatus('error');
+            setSnackbarMessage('Error pinging device');
+            setShowSnackbar(true);
+        } finally {
+            setIsPinging(false); // Re-enable buttons
+            // Reset ping status after animation
+            setTimeout(() => setPingStatus(null), 5000);
+        }
+    };
+
+    const pingIconStyle = {
+        transform: [{
+            scale: pingAnimationValue.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [1, 1.2, 1]
+            })
+        }]
+    };
+
     return (
         <View style={[styles.container, { backgroundColor: bgColor }]}>
             {renderStatus()}
             
-            {/* Only show loading if device is online */}
-            {isLoading && deviceInfo?.isonline ? (
+            {/* Only show loading if device is online and loading */}
+            {isLoading && deviceInfo?.isOnline ? (
                 <View style={styles.loaderContainer}>
                     <ActivityIndicator size="large" color="#7B1FA2" />
                     <Text style={[styles.loaderText, { color: textColor }]}>
@@ -345,13 +446,13 @@ const CaptureScreen = ({ navigation,route }) => {
                                 {/* Online Status */}
                                 <View style={[styles.statCard, { backgroundColor: cardBgColor }]}>
                                     <Icon 
-                                        name={deviceInfo?.isonline ? "access-point" : "access-point-off"} 
+                                        name={deviceInfo?.isOnline ? "access-point" : "access-point-off"} 
                                         size={24} 
-                                        color={deviceInfo?.isonline ? "#4CAF50" : "#FF5252"} 
+                                        color={deviceInfo?.isOnline ? "#4CAF50" : "#FF5252"} 
                                     />
                                     <Text style={[styles.statLabel, { color: textColor }]}>Status</Text>
-                                    <Text style={[styles.statValue, { color: deviceInfo?.isonline ? "#4CAF50" : "#FF5252" }]}>
-                                        {deviceInfo?.isonline ? 'Online' : 'Offline'}
+                                    <Text style={[styles.statValue, { color: deviceInfo?.isOnline ? "#4CAF50" : "#FF5252" }]}>
+                                        {deviceInfo?.isOnline ? 'Online' : 'Offline'}
                                     </Text>
                                 </View>
 
@@ -371,7 +472,7 @@ const CaptureScreen = ({ navigation,route }) => {
                                     <Icon name="calendar" size={24} color="#7B1FA2" />
                                     <Text style={[styles.statLabel, { color: textColor }]}>Registered</Text>
                                     <Text style={[styles.statValue, { color: textColor }]}>
-                                        {deviceInfo?.createdat ? new Date(deviceInfo.createdat).toLocaleDateString() : 'N/A'}
+                                        {deviceInfo?.createdAt ? new Date(deviceInfo.createdAt).toLocaleDateString() : 'N/A'}
                                     </Text>
                                 </View>
 
@@ -422,13 +523,47 @@ const CaptureScreen = ({ navigation,route }) => {
                     </ScrollView>
 
                     {/* Capture Button - Fixed at bottom */}
-                    <View style={[styles.captureButtonContainer, { backgroundColor: bgColor }]}>
+                    <View style={[styles.actionButtonsContainer, { backgroundColor: bgColor }]}>
+                        {/* Ping Button */}
                         <TouchableOpacity 
-                            style={styles.captureButton}
-                            onPress={() => {handleCapture(deviceId)}}
+                            style={[
+                                styles.actionButton, 
+                                styles.pingButton,
+                                (isPinging || isCapturing) && styles.actionButtonDisabled
+                            ]}
+                            onPress={handlePing}
+                            disabled={ isPinging || isCapturing}
+                        >
+                            <Animated.View style={pingIconStyle}>
+                                <Icon 
+                                    name={
+                                        isPinging ? "access-point-network" : 
+                                        pingStatus === 'success' ? "check-circle" : 
+                                        "access-point"
+                                    } 
+                                    size={24} 
+                                    color="#FFFFFF" 
+                                />
+                            </Animated.View>
+                            <Text style={styles.actionButtonText}>
+                                {isPinging ? 'Pinging...' : 'Ping'}
+                            </Text>
+                        </TouchableOpacity>
+
+                        {/* Capture Button */}
+                        <TouchableOpacity 
+                            style={[
+                                styles.actionButton, 
+                                styles.captureButton,
+                                (isPinging || isCapturing) && styles.actionButtonDisabled
+                            ]}
+                            onPress={() => handleCapture(deviceId)}
+                            disabled={isPinging || isCapturing}
                         >
                             <Icon name="camera" size={24} color="#FFFFFF" />
-                            <Text style={styles.captureButtonText}>Capture Screen</Text>
+                            <Text style={styles.actionButtonText}>
+                                {isCapturing ? 'Capturing...' : 'Capture'}
+                            </Text>
                         </TouchableOpacity>
                     </View>
                 </>
@@ -450,6 +585,19 @@ const CaptureScreen = ({ navigation,route }) => {
                     </View>
                 )}
             />
+
+            <Snackbar
+                visible={showSnackbar}
+                onDismiss={() => setShowSnackbar(false)}
+                duration={2000}
+                style={styles.snackbar}
+                action={{
+                    label: 'Dismiss',
+                    onPress: () => setShowSnackbar(false),
+                }}
+            >
+                {snackbarMessage}
+            </Snackbar>
         </View>
     );
 };
@@ -673,6 +821,51 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '500',
         marginLeft: 8,
+    },
+    actionButtonsContainer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: 16,
+        flexDirection: 'row',
+        gap: 12,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(0,0,0,0.1)',
+    },
+    actionButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        borderRadius: 12,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    actionButtonDisabled: {
+        opacity: 0.6,
+    },
+    actionButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginLeft: 8,
+    },
+    pingButton: {
+        backgroundColor: '#4CAF50',
+    },
+    captureButton: {
+        backgroundColor: '#7B1FA2',
+    },
+    snackbar: {
+        backgroundColor: '#4CAF50',
     },
 });
 

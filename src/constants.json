@@ -1,5 +1,5 @@
 {
-    "API_URL": "https://9851-103-115-199-92.ngrok-free.app",
+    "API_URL": "http://157.173.116.135:8881",
     "API_VER": "/v2/api",
-    "SSE_URL" : "oud298ngs8ji.share.zrok.io"
+    "SSE_URL" : "http://157.173.116.135:8885"
 }

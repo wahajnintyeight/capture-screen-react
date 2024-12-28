@@ -22,7 +22,6 @@ const Home = ({ navigation }) => {
     const [snackbarMessage, setSnackbarMessage] = useState('');
     
 
-    console.log("Home Screen")
     useEffect(() => {
         fetchDevices();
     }, [])
@@ -153,11 +152,16 @@ const Home = ({ navigation }) => {
         try {
             const response = await apiManager.scanDevices();
             console.log(response.code)
-            if (response?.code === 1041) {
+            if (response?.code === 1084) {
                 showSnackbar('Scan completed successfully');
                 fetchDevices();
             } else {
-                showSnackbar('Scan failed');
+                if(response?.code === 1006){
+                    await apiManager.createSession();
+                    await fetchDevices();
+                } else {
+                    showSnackbar('Scan failed');
+                }
             }
         } catch (error) {
             console.error('Scan error:', error);
@@ -203,7 +207,7 @@ const Home = ({ navigation }) => {
                                 device={device}
                                 textColor={textColor}
                                 onRefresh={() => handlePing(device._id)}
-                                onCapture={() => handleOnCapture(device._id,device.devicename)}
+                                onCapture={() => handleOnCapture(device._id,device.deviceName)}
                                 onDelete={() => handleDeleteDevice(device._id)}
                                 isCapturing={loadingDeviceId === device._id}
                                 isDeleting={deletingDeviceId === device._id}

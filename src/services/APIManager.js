@@ -130,9 +130,9 @@ class APIManager {
         }
     }
 
-    async pingDevice(deviceId) {
+    async pingDevice(deviceName) {
         try {
-            const res = await this.axiosInstance.get(API_URL + API_VER + '/ping/' + deviceId)
+            const res = await this.axiosInstance.post(API_URL + API_VER + '/ping',{deviceName:deviceName})
             console.log("Ping Device:", res.data)
             return res.data;
         } catch (err) {
@@ -167,7 +167,6 @@ class APIManager {
     async getDeviceInfo(deviceId) {
         try {
             const res = await this.axiosInstance.get(API_URL + API_VER + '/device?deviceId=' + deviceId)
-            console.log("Device Info:", res.data)
             return res.data;
         } catch (err) {
             console.log("Error while getting device info:", err.response)
