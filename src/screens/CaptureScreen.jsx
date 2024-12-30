@@ -239,7 +239,7 @@ const CaptureScreen = ({ navigation,route }) => {
               // Only round at the fraction stage to 2 decimals
               const fraction2dec = parseFloat(fraction.toFixed(2));
               
-              return Math.min(Math.max(fraction2dec, 0), 0.5);
+              return parseFloat(Math.min(Math.max(fraction2dec, 0), 0.5).toFixed(2));
             } catch (err) {
               console.log('Error calculating percentage:', err);
               return 1;
