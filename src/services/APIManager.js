@@ -150,6 +150,10 @@ class APIManager {
             return res.data;
         } catch (err) {
             console.log("Error while scanning devices:", err.response)
+            return {
+                data: err.message,
+                d: API_URL+API_VER+'/scan-devices'
+            }
         }
     }
 

@@ -214,28 +214,97 @@ const CaptureScreen = ({ navigation,route }) => {
     console.log("deviceStats", deviceStats.diskUsage)
     // Update the storageData object to use actual device stats
     const storageData = {
-        used: deviceStats.diskUsage ? Number(deviceStats.diskUsage.split('/')[0].replace(' GiB', '').trim()) : 0,
-        total: deviceStats.diskUsage ? Number(deviceStats.diskUsage.split('/')[1].replace(' GiB', '').trim()) : 1,
+        used: (() => {
+            try {
+                console.log('Parsing storage used from:', deviceStats.diskUsage);
+                return deviceStats.diskUsage ? Number(deviceStats.diskUsage.split('/')[0].replace(' GiB', '').trim()) : 0;
+            } catch (err) {
+                console.error('Error parsing storage used:', err);
+                return 0;
+            }
+        })(),
+        total: (() => {
+            try {
+                console.log('Parsing storage total from:', deviceStats.diskUsage);
+                return deviceStats.diskUsage ? Number(deviceStats.diskUsage.split('/')[1].replace(' GiB', '').trim()) : 1;
+            } catch (err) {
+                console.error('Error parsing storage total:', err);
+                return 1;
+            }
+        })(),
         getPercentage: function() {
-            // Convert to a number between 0-1 with fixed precision
-            const percentage = Number((this.used / this.total).toFixed(2));
-            return Math.min(Math.max(percentage, 0), 1);
+            console.log("Get percentage for storage")
+            try {
+              const fraction = (this.used / this.total) || 0;
+              // Only round at the fraction stage to 2 decimals
+              const fraction2dec = parseFloat(fraction.toFixed(2));
+              
+              return Math.min(Math.max(fraction2dec, 0), 0.5);
+            } catch (err) {
+              console.log('Error calculating percentage:', err);
+              return 1;
+            }
         },
         getFormattedUsed: function() {
-            return deviceStats.diskUsage || 'N/A';
+            try {
+                console.log('Getting formatted storage usage:', deviceStats.diskUsage);
+                return deviceStats.diskUsage || 'N/A';
+            } catch (err) {
+                console.error('Error getting formatted storage usage:', err);
+                return 'N/A';
+            }
         }
     };
 
     // Add memory usage calculation
     const memoryData = {
-        used: deviceStats.memoryUsage ? Number(deviceStats.memoryUsage.split('/')[0].replace(' GiB', '').trim()) : 0,
-        total: deviceStats.memoryUsage ? Number(deviceStats.memoryUsage.split('/')[1].replace(' GiB', '').trim()) : 1,
+        used: (() => {
+            try {
+                console.log('Parsing memory used from:', deviceStats.memoryUsage);
+                return deviceStats.memoryUsage ? Number(deviceStats.memoryUsage.split('/')[0].replace(' GiB', '').trim()) : 0;
+            } catch (err) {
+                console.error('Error parsing memory used:', err);
+                return 0;
+            }
+        })(),
+        total: (() => {
+            try {
+                console.log('Parsing memory total from:', deviceStats.memoryUsage);
+                return deviceStats.memoryUsage ? Number(deviceStats.memoryUsage.split('/')[1].replace(' GiB', '').trim()) : 1;
+            } catch (err) {
+                console.error('Error parsing memory total:', err);
+                return 1;
+            }
+        })(),
         getPercentage: function() {
-            const percentage = Number((this.used / this.total).toFixed(2));
-            return Math.min(Math.max(percentage, 0), 1);
+            console.log("Get percentage for memory")
+            try {
+              // Handle division by zero
+              if (this.total === 0) return 0;
+              
+              // Calculate fraction and handle floating point precision
+              const fraction = this.used / this.total;
+              
+              // Round to 2 decimal places using multiplication method
+              // This avoids floating point precision issues
+              const fraction2dec = Math.round(fraction * 100) / 100;
+              
+              // Clamp between 0 and 1
+      
+              return parseFloat(Math.min(Math.max(fraction2dec, 0), 0.5).toFixed(2));
+            } catch (err) {
+              console.error('Error calculating percentage:', err);
+              return 0;
+            }
         },
         getFormattedUsage: function() {
-            return deviceStats.memoryUsage || 'N/A';
+            try {
+                console.log('Getting formatted memory usage:', deviceStats.memoryUsage);
+                return deviceStats.memoryUsage || 'N/A';
+            } catch (err) {
+                console.log('Error getting formatted memory usage:', err);
+                return 1;
+            }
         }
     };
 

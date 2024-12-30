@@ -1,5 +1,5 @@
 {
-    "API_URL": "http://157.173.116.135:8881",
+    "API_URL": "https://api.wahaj.codes:8443",
     "API_VER": "/v2/api",
-    "SSE_URL" : "http://157.173.116.135:8885"
+    "SSE_URL" : "https://sse.wahaj.codes:8443"
 }
