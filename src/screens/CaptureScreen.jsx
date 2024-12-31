@@ -211,12 +211,12 @@ const CaptureScreen = ({ navigation,route }) => {
         return date.toLocaleDateString();
     };
 
-    console.log("deviceStats", deviceStats.diskUsage)
+    
     // Update the storageData object to use actual device stats
     const storageData = {
         used: (() => {
             try {
-                console.log('Parsing storage used from:', deviceStats.diskUsage);
+                 
                 return deviceStats.diskUsage ? Number(deviceStats.diskUsage.split('/')[0].replace(' GiB', '').trim()) : 0;
             } catch (err) {
                 console.error('Error parsing storage used:', err);
@@ -225,7 +225,7 @@ const CaptureScreen = ({ navigation,route }) => {
         })(),
         total: (() => {
             try {
-                console.log('Parsing storage total from:', deviceStats.diskUsage);
+                
                 return deviceStats.diskUsage ? Number(deviceStats.diskUsage.split('/')[1].replace(' GiB', '').trim()) : 1;
             } catch (err) {
                 console.error('Error parsing storage total:', err);
@@ -233,7 +233,7 @@ const CaptureScreen = ({ navigation,route }) => {
             }
         })(),
         getPercentage: function() {
-            console.log("Get percentage for storage")
+          
             try {
               const fraction = (this.used / this.total) || 0;
               // Only round at the fraction stage to 2 decimals
@@ -247,7 +247,7 @@ const CaptureScreen = ({ navigation,route }) => {
         },
         getFormattedUsed: function() {
             try {
-                console.log('Getting formatted storage usage:', deviceStats.diskUsage);
+                
                 return deviceStats.diskUsage || 'N/A';
             } catch (err) {
                 console.error('Error getting formatted storage usage:', err);
@@ -269,7 +269,7 @@ const CaptureScreen = ({ navigation,route }) => {
         })(),
         total: (() => {
             try {
-                console.log('Parsing memory total from:', deviceStats.memoryUsage);
+            
                 return deviceStats.memoryUsage ? Number(deviceStats.memoryUsage.split('/')[1].replace(' GiB', '').trim()) : 1;
             } catch (err) {
                 console.error('Error parsing memory total:', err);
@@ -277,7 +277,7 @@ const CaptureScreen = ({ navigation,route }) => {
             }
         })(),
         getPercentage: function() {
-            console.log("Get percentage for memory")
+           
             try {
               // Handle division by zero
               if (this.total === 0) return 0;
@@ -299,7 +299,7 @@ const CaptureScreen = ({ navigation,route }) => {
         },
         getFormattedUsage: function() {
             try {
-                console.log('Getting formatted memory usage:', deviceStats.memoryUsage);
+                
                 return deviceStats.memoryUsage || 'N/A';
             } catch (err) {
                 console.log('Error getting formatted memory usage:', err);
@@ -388,8 +388,18 @@ const CaptureScreen = ({ navigation,route }) => {
     };
 
     // Add reconnect handler
-    const handleReconnect = () => {
-        SSEManager.connect();
+    const handleReconnect = async () => {
+        try {
+            // First try to ping the device
+            await handlePing();
+            
+            // Then reconnect SSE
+            SSEManager.connect();
+        } catch (err) {
+            console.error('Error during reconnection:', err);
+            setSnackbarMessage('Failed to reconnect');
+            setShowSnackbar(true);
+        }
     };
 
     // Modify the header section to include the reconnect button
@@ -478,7 +488,7 @@ const CaptureScreen = ({ navigation,route }) => {
             {renderStatus()}
             
             {/* Only show loading if device is online and loading */}
-            {isLoading && deviceInfo?.isOnline ? (
+            {isLoading && deviceInfo?.isOnline && !connectionStatus?.status === 'disconnected' ? (
                 <View style={styles.loaderContainer}>
                     <ActivityIndicator size="large" color="#7B1FA2" />
                     <Text style={[styles.loaderText, { color: textColor }]}>
