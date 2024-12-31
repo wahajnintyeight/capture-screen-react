@@ -6,6 +6,7 @@ import DeviceCard from '../components/DeviceCard';
 import { FAB, Portal, Snackbar } from 'react-native-paper';
 import { Animated, Easing } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import LinearGradient from 'react-native-linear-gradient';
 
 
 
@@ -171,226 +172,289 @@ const Home = ({ navigation }) => {
         }
     };
 
-    return (
-        <>
-            <ScrollView 
-                style={[styles.container, { backgroundColor: bgColor }]}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        colors={['#7B1FA2']} // Android
-                        tintColor={textColor} // iOS
-                        title="Pull to refresh" // iOS
-                        titleColor={textColor} // iOS
-                    />
-                }
-            >
-                <View style={styles.header}>
-                    <Text style={[styles.title, { color: textColor }]}>My Devices</Text>
-                    {isLoading && (
-                        <ActivityIndicator 
-                            size="small" 
-                            color="#7B1FA2"
-                            style={styles.headerLoader} 
-                        />
-                    )}
-                </View>
-                <Text style={[styles.deviceCount, { color: textColor }]}>
-                    Total Devices: {devices.length}
-                </Text>
-                <View style={styles.gridContainer}>
-                    {devices.length > 0 ? (
-                        devices.map((device, index) => (
-                            <DeviceCard
-                                key={index}
-                                device={device}
-                                textColor={textColor}
-                                onRefresh={() => handlePing(device._id)}
-                                onCapture={() => handleOnCapture(device._id,device.deviceName)}
-                                onDelete={() => handleDeleteDevice(device._id)}
-                                isCapturing={loadingDeviceId === device._id}
-                                isDeleting={deletingDeviceId === device._id}
-                                navigation={navigation}
-                            />
-                        ))
-                    ) : (
-                        <View style={styles.noDevicesContainer}>
-                            <Text style={[styles.noDevicesText, { color: textColor }]}>
-                                No devices available
-                            </Text>
-                        </View>
-                    )}
-                </View>
-            </ScrollView>
+    const gradientColors = {
+        light: ['#F6F0FF', '#F0E6FF', '#E8DDFF'],
+        dark: ['#13111C', '#221C3D', '#2D1B54']
+    };
 
-            <Portal>
-                <FAB
-                    icon={({ size, color }) => (
+    const cardGradient = {
+        light: ['#FFFFFF', '#FAFAFA'],
+        dark: ['rgba(45, 27, 84, 0.7)', 'rgba(29, 17, 54, 0.9)']
+    };
+
+    const glowStyle = colorScheme === 'dark' ? {
+        shadowColor: '#9C27B0',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.2,
+        shadowRadius: 15,
+        elevation: 10,
+    } : {};
+
+    return (
+        <LinearGradient
+            colors={colorScheme === 'dark' ? gradientColors.dark : gradientColors.light}
+            style={styles.safeArea}
+        >
+            {/* Header Section - removed background color */}
+            <View style={styles.header}>
+                <View style={styles.headerLeft}>
+                    <Text style={[styles.title, { 
+                        color: colorScheme === 'dark' ? '#FFFFFF' : textColor 
+                    }]}>My Devices</Text>
+                    <Text style={[styles.subtitle, { 
+                        color: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.7)' : textColor 
+                    }]}>
+                        {devices.length} {devices.length === 1 ? 'device' : 'devices'}
+                    </Text>
+                </View>
+                
+                <TouchableOpacity 
+                    style={[
+                        styles.scanButton, 
+                        isScanning && styles.scanningButton,
+                        colorScheme === 'dark' && styles.scanButtonGlow
+                    ]}
+                    onPress={handleScan}
+                    disabled={isScanning}
+                >
+                    <LinearGradient
+                        colors={colorScheme === 'dark' 
+                            ? ['#9C27B0', '#6A0DAD'] 
+                            : ['#9C27B0', '#7B1FA2']}
+                        style={styles.scanButtonGradient}
+                    >
                         <Animated.View
                             style={{
                                 transform: isScanning ? [{ rotate: spin }] : [],
                             }}
                         >
                             <Icon 
-                                name={isScanning ? 'refreshing' : 'refresh'} 
-                                size={size} 
-                                color={color} 
+                                name={isScanning ? 'loading' : 'refresh'} 
+                                size={20} 
+                                color="white" 
                             />
                         </Animated.View>
-                    )}
-                    style={styles.fab}
-                    color="white"
-                    customSize={56}
-                    label={isScanning ? "Scanning..." : "Scan"}
-                    extended={isScanning}
-                    onPress={handleScan}
-                    loading={isScanning}
-                    disabled={isScanning}
-                    animated={true}
-                />
-            </Portal>
+                        <Text style={styles.scanButtonText}>
+                            {isScanning ? 'Scanning...' : 'Scan'}
+                        </Text>
+                    </LinearGradient>
+                </TouchableOpacity>
+            </View>
+
+            {/* Main Content */}
+            <ScrollView 
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#7B1FA2']}
+                        tintColor={textColor}
+                        title="Pull to refresh"
+                        titleColor={textColor}
+                    />
+                }
+            >
+                {isLoading ? (
+                    <ActivityIndicator 
+                        size="large" 
+                        color="#7B1FA2"
+                        style={styles.loader}
+                    />
+                ) : devices.length > 0 ? (
+                    <View style={styles.gridContainer}>
+                        {devices.map((device, index) => (
+                            <DeviceCard
+                                key={device._id}
+                                device={device}
+                                textColor={textColor}
+                                onRefresh={() => handlePing(device._id)}
+                                onCapture={() => handleOnCapture(device._id, device.deviceName)}
+                                onDelete={() => handleDeleteDevice(device._id)}
+                                isCapturing={loadingDeviceId === device._id}
+                                isDeleting={deletingDeviceId === device._id}
+                                navigation={navigation}
+                            />
+                        ))}
+                    </View>
+                ) : (
+                    <View style={styles.emptyState}>
+                        <Icon name="devices" size={48} color="#7B1FA2" />
+                        <Text style={[styles.emptyStateTitle, { color: textColor }]}>
+                            No Devices Found
+                        </Text>
+                        <Text style={[styles.emptyStateSubtitle, { color: textColor }]}>
+                            Tap the scan button to search for devices
+                        </Text>
+                    </View>
+                )}
+            </ScrollView>
 
             <Snackbar
                 visible={snackbarVisible}
                 onDismiss={() => setSnackbarVisible(false)}
                 duration={3000}
+                style={[
+                    styles.snackbar,
+                    colorScheme === 'dark' && styles.snackbarDark
+                ]}
                 action={{
                     label: 'Dismiss',
                     onPress: () => setSnackbarVisible(false),
-                }}>
-                {snackbarMessage}
+                    labelStyle: [
+                        styles.snackbarActionLabel,
+                        colorScheme === 'dark' && styles.snackbarActionLabelDark
+                    ],
+                }}
+            >
+                <Text style={[
+                    styles.snackbarText,
+                    colorScheme === 'dark' && styles.snackbarTextDark
+                ]}>
+                    {snackbarMessage}
+                </Text>
             </Snackbar>
-        </>
-    )
-}
+        </LinearGradient>
+    );
+};
 
 const styles = StyleSheet.create({
-    container: {
+    safeArea: {
         flex: 1,
-        padding: 16,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 20,
+        paddingHorizontal: 20,
+        paddingTop: 60,
+        paddingBottom: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.05)',
+    },
+    headerLeft: {
+        flex: 1,
     },
     title: {
-        fontSize: 24,
+        fontSize: 32,
         fontWeight: 'bold',
+        marginBottom: 4,
     },
-    deviceCount: {
-        fontSize: 16,
-        fontWeight: '500',
-        marginBottom: 10,
+    subtitle: {
+        fontSize: 15,
+        opacity: 0.7,
+    },
+    scanButton: {
+        borderRadius: 8,
+        overflow: 'hidden',
+    },
+    scanButtonGlow: {
+        shadowColor: '#9C27B0',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    scanButtonGradient: {
+        flexDirection: 'row',
+        alignItems: 'center',
         paddingHorizontal: 16,
+        paddingVertical: 10,
+        gap: 8,
+    },
+    scanningButton: {
+        opacity: 0.7,
+    },
+    scanButtonText: {
+        color: 'white',
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    scrollView: {
+        flex: 1,
+    },
+    scrollContent: {
+        padding: 16,
     },
     gridContainer: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        justifyContent: 'space-between',
-        paddingHorizontal: 8,
-    },
-    card: {
-        borderRadius: 16,
+        gap: 16,
+        alignItems: 'stretch',
         padding: 16,
+    },
+    loader: {
+        marginTop: 40,
+    },
+    emptyState: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 60,
+        gap: 12,
+        backgroundColor: 'rgba(45, 27, 84, 0.3)',
+        borderRadius: 16,
+        margin: 16,
+        padding: 24,
+        shadowColor: '#9C27B0',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.2,
+        shadowRadius: 15,
+        elevation: 10,
+    },
+    emptyStateTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        marginTop: 8,
+    },
+    emptyStateSubtitle: {
+        fontSize: 15,
+        opacity: 0.7,
+        textAlign: 'center',
+    },
+    snackbar: {
+        backgroundColor: 'rgba(156, 39, 176, 0.95)',
+        borderRadius: 12,
         marginBottom: 16,
-        width: (Dimensions.get('window').width - 48) / 2,
-        shadowColor: '#000',
+        marginHorizontal: 16,
+        elevation: 6,
+        shadowColor: '#9C27B0',
         shadowOffset: {
             width: 0,
-            height: 2,
+            height: 3,
         },
-        shadowOpacity: 0.1,
-        shadowRadius: 3,
-        elevation: 3,
-        minHeight: 180,
+        shadowOpacity: 0.27,
+        shadowRadius: 4.65,
     },
-    cardHeader: {
-        marginBottom: 16,
+    snackbarDark: {
+        backgroundColor: 'rgba(255, 253, 250, 0.95)',
+        borderWidth: 1,
+        borderColor: 'rgba(156, 39, 176, 0.1)',
+        shadowColor: 'rgba(156, 39, 176, 0.3)',
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
     },
-    deviceInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    deviceIcon: {
-        marginRight: 8,
-    },
-    deviceName: {
-        fontSize: 18,
-        fontWeight: '600',
-        flex: 1,
-    },
-    badge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
-    },
-    onlineBadge: {
-        backgroundColor: '#E8F5E9',
-    },
-    offlineBadge: {
-        backgroundColor: '#FFEBEE',
-    },
-    statusIcon: {
-        marginRight: 4,
-    },
-    badgeText: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    cardContent: {
-        flex: 1,
-        justifyContent: 'space-between',
-    },
-    infoRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    dateText: {
-        fontSize: 14,
-        marginLeft: 8,
-    },
-    captureButton: {
-        backgroundColor: '#7B1FA2',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 10,
-        borderRadius: 8,
-    },
-    captureButtonText: {
+    snackbarText: {
         color: '#FFFFFF',
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '500',
-        marginLeft: 8,
+        letterSpacing: 0.3,
     },
-    noDevicesContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '100%',
-        paddingVertical: 40,
+    snackbarTextDark: {
+        color: '#2D1B54',
+        fontWeight: '600',
     },
-    noDevicesText: {
-        fontSize: 16,
-        fontWeight: '500',
+    snackbarActionLabel: {
+        color: '#E0B0FF',
+        fontWeight: '600',
     },
-    headerLoader: {
-        marginLeft: 10,
-    },
-    fab: {
-        position: 'absolute',
-        margin: 16,
-        right: 0,
-        bottom: 0,
-        backgroundColor: '#7B1FA2', // Your primary color
-        borderRadius: 28,
+    snackbarActionLabelDark: {
+        color: '#9C27B0',
     },
 });
 

@@ -7,27 +7,31 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PaperProvider } from 'react-native-paper';
 import CaptureScreen from './src/screens/CaptureScreen';
+import 'react-native-gesture-handler'
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const Stack = createNativeStackNavigator();
 
 const App = () => {
   return (
-    <PaperProvider>
-    <NavigationContainer>
-      <SafeAreaView style={{ flex: 1 }}>
-        <Stack.Navigator 
-          initialRouteName="Landing"
-          screenOptions={{
-            headerShown: false
-          }}
-        >
-          <Stack.Screen name="Landing" component={LandingScreen} />
-          <Stack.Screen name="Home" component={Home} />
-          <Stack.Screen name="Capture" component={CaptureScreen} />
-        </Stack.Navigator>
-        </SafeAreaView>
-      </NavigationContainer>
-    </PaperProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PaperProvider>
+        <NavigationContainer>
+          <SafeAreaView style={{ flex: 1 }}>
+            <Stack.Navigator 
+              initialRouteName="Landing"
+              screenOptions={{
+                headerShown: false
+              }}
+            >
+              <Stack.Screen name="Landing" component={LandingScreen} />
+              <Stack.Screen name="Home" component={Home} />
+              <Stack.Screen name="Capture" component={CaptureScreen} />
+            </Stack.Navigator>
+          </SafeAreaView>
+        </NavigationContainer>
+      </PaperProvider>
+    </GestureHandlerRootView>
   );
 };
 

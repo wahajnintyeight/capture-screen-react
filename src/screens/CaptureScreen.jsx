@@ -1,11 +1,27 @@
-import { View, Text, StyleSheet, ScrollView, Dimensions, useColorScheme, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Image } from "react-native"
+import { View, Text, StyleSheet, ScrollView, Dimensions, useColorScheme, TouchableOpacity, Alert, RefreshControl, ActivityIndicator, Image, LogBox, Share, Platform } from "react-native"
 import apiManager from "../services/APIManager";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Snackbar, Card, ProgressBar } from 'react-native-paper';
-import { Animated, Easing } from 'react-native';
+// import {  Easing } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import SSEManager from '../services/SSEManager';
 import ImageViewing from 'react-native-image-viewing';
+import LinearGradient from 'react-native-linear-gradient';
+import MaskedView from '@react-native-masked-view/masked-view';
+import Animated, { 
+    useSharedValue,
+    withRepeat,
+    withSequence,
+    withTiming,
+    useAnimatedStyle,
+    interpolate,
+    Easing,
+    cancelAnimation,
+} from 'react-native-reanimated';
+
+LogBox.ignoreLogs([
+  '[Reanimated] Reduced motion setting is enabled on this device.',
+]);
 
 const CaptureScreen = ({ navigation,route }) => {
     const colorScheme = useColorScheme();
@@ -34,10 +50,233 @@ const CaptureScreen = ({ navigation,route }) => {
     const [pingStatus, setPingStatus] = useState(null);
     const [showSnackbar, setShowSnackbar] = useState(false);
     const [snackbarMessage, setSnackbarMessage] = useState('');
+    const [isReconnecting, setIsReconnecting] = useState(false);
+    const reconnectAnimation = useSharedValue(1);
+    const [isImageLoading, setIsImageLoading] = useState(true);
+    const spinnerRotation = useSharedValue(0);
+    const [isCardsLoading, setIsCardsLoading] = useState(false);
+    const spinValue = useSharedValue(0);
 
     const deviceId = route?.params?.deviceId;
     const deviceName = route?.params?.deviceName;
-    const pingAnimationValue = useRef(new Animated.Value(0)).current;
+    const pingAnimationValue = useSharedValue(1);
+
+    // Add gradient animation
+    const gradientPosition = useSharedValue(0);
+
+    // Create animated style for ping animation using Reanimated 2
+    const pingIconStyle = useAnimatedStyle(() => {
+        const scale = interpolate(
+            pingAnimationValue.value,
+            [0, 0.5, 1],
+            [1, 1.2, 1]
+        );
+        
+        return {
+            transform: [{ scale }]
+        };
+    });
+
+    // Initialize animation in useEffect
+    useEffect(() => {
+        pingAnimationValue.value = withRepeat(
+            withSequence(
+                withTiming(1.2, { duration: 1000, easing: Easing.ease }),
+                withTiming(1, { duration: 1000, easing: Easing.ease })
+            ),
+            -1,
+            true
+        );
+    }, []);
+
+    // Update the ping animation
+    const startPingAnimation = () => {
+        pingAnimationValue.value = withSequence(
+            withTiming(1, { duration: 1000, easing: Easing.ease }),
+            withTiming(0, { duration: 1000, easing: Easing.ease })
+        );
+    };
+
+    // Handle ping response and SSE updates
+    const updateDeviceStats = useCallback((data) => {
+        console.log('Updating device stats with:', data);
+        
+        // Create a new stats object with all fields
+        const updatedStats = {
+            ...deviceStats,
+            ...data,
+            // Parse memory and disk usage if they exist
+            memoryUsage: data.memoryUsage || deviceStats?.memoryUsage,
+            diskUsage: data.diskUsage || deviceStats?.diskUsage,
+            lastImage: data.lastImage || deviceStats?.lastImage,
+            isOnline: data.isOnline !== undefined ? data.isOnline : deviceStats?.isOnline,
+            lastOnline: data.lastOnline || deviceStats?.lastOnline,
+        };
+
+        setDeviceStats(updatedStats);
+
+        // Update memory usage state
+        if (data.memoryUsage) {
+            const [used, total] = parseMemoryUsage(data.memoryUsage);
+            setMemoryUsed(used);
+            setMemoryTotal(total);
+        }
+
+        // Update storage usage state
+        if (data.diskUsage) {
+            const [used, total] = parseStorageUsage(data.diskUsage);
+            setStorageUsed(used);
+            setStorageTotal(total);
+        }
+    }, [deviceStats]);
+
+    // Handle ping response
+    const handlePing = async () => {
+        if (isPinging || isCapturing) return;
+
+        try {
+            setIsPinging(true);
+            setPingStatus('pending');
+            
+            // Start loading animation
+            setIsCardsLoading(true);
+            setIsMemoryCardLoading(true);
+            setIsStorageCardLoading(true);
+            setIsStatusCardLoading(true);
+            startSpinnerAnimation();
+
+            const response = await apiManager.pingDevice(deviceName);
+            console.log('Ping response:', response);
+
+            if (response?.code === 1082) {
+                setPingStatus('success');
+                setSnackbarMessage('Ping Device Event Sent Successfully');
+                setIsCardsLoading(true);
+                startSpinnerAnimation();
+            } else {
+                setPingStatus('error');
+                setSnackbarMessage('Failed to send Ping Device Event');
+                // Stop loading only on error
+                setIsCardsLoading(false);
+                stopSpinnerAnimation();
+            }
+        } catch (error) {
+            console.error('Ping error:', error);
+            setPingStatus('error');
+            setSnackbarMessage('Failed to send Ping Device Event');
+            // Stop loading on error
+            setIsCardsLoading(false);
+            stopSpinnerAnimation();
+        } finally {
+            // setIsPinging(false);
+            setShowSnackbar(true);
+        }
+    };
+
+    // Listen for SSE updates
+    useEffect(() => {
+        const handleSSEUpdate = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('SSE Update received:', data);
+                updateDeviceStats(data);
+                
+                // Stop loading when SSE data is received
+                setIsCardsLoading(false);
+                stopSpinnerAnimation();
+            } catch (error) {
+                console.error('Error handling SSE update:', error);
+            }
+        };
+
+        const unsubscribe = SSEManager.subscribe(deviceName, handleSSEUpdate);
+        return () => {
+            if (unsubscribe) unsubscribe();
+            // Cleanup animation on unmount
+            stopSpinnerAnimation();
+        };
+    }, [deviceName, updateDeviceStats]);
+
+    // Helper function to parse memory usage
+    const parseMemoryUsage = (memoryString) => {
+        try {
+            console.log('Parsing memory used from:', memoryString);
+            const [used, total] = memoryString.split('/').map(part => 
+                parseFloat(part.trim().replace('GiB', ''))
+            );
+            return [used, total];
+        } catch (error) {
+            console.error('Error parsing memory usage:', error);
+            return [0, 0];
+        }
+    };
+
+    // Helper function to parse storage usage
+    const parseStorageUsage = (storageString) => {
+        try {
+            console.log('Parsing storage used from:', storageString);
+            const [used, total] = storageString.split('/').map(part => 
+                parseFloat(part.trim().replace('GiB', ''))
+            );
+            return [used, total];
+        } catch (error) {
+            console.error('Error parsing storage usage:', error);
+            return [0, 0];
+        }
+    };
+
+    // Initialize gradient animation
+    useEffect(() => {
+        gradientPosition.value = withRepeat(
+            withSequence(
+                withTiming(1, { duration: 2000 }),
+                withTiming(0, { duration: 2000 })
+            ),
+            -1,
+            true
+        );
+    }, []);
+
+    const gradientColors = {
+        light: ['#F6F0FF', '#F0E6FF', '#E8DDFF'],
+        dark: ['#13111C', '#221C3D', '#2D1B54']
+    };
+
+    // Snackbar theme configurations
+    const snackbarThemes = {
+        success: {
+            light: {
+                background: 'rgba(156, 39, 176, 0.95)',
+                text: '#FFFFFF',
+                action: '#E0B0FF'
+            },
+            dark: {
+                background: 'rgba(255, 253, 250, 0.95)',
+                text: '#2D1B54',
+                action: '#9C27B0'
+            }
+        },
+        error: {
+            light: {
+                background: 'rgba(244, 67, 54, 0.95)',
+                text: '#FFFFFF',
+                action: '#FFB4AB'
+            },
+            dark: {
+                background: 'rgba(255, 253, 250, 0.95)',
+                text: '#B3261E',
+                action: '#DC362E'
+            }
+        }
+    };
+
+    // Get snackbar theme based on message type
+    const getSnackbarTheme = () => {
+        const isError = snackbarMessage.toLowerCase().includes('error') || 
+                       snackbarMessage.toLowerCase().includes('failed');
+        const theme = isError ? snackbarThemes.error : snackbarThemes.success;
+        return colorScheme === 'dark' ? theme.dark : theme.light;
+    };
 
     const fetchDeviceInfo = async (deviceId) => {
         setIsLoading(true);
@@ -98,6 +337,10 @@ const CaptureScreen = ({ navigation,route }) => {
                         deviceName: deviceData.deviceName
                     }));
                 }
+                setIsMemoryCardLoading(false);
+                setIsStorageCardLoading(false);
+                setIsStatusCardLoading(false);
+                stopSpinnerAnimation();
 
                 return;
             }
@@ -132,7 +375,14 @@ const CaptureScreen = ({ navigation,route }) => {
                     }));
                 }
 
+                setIsCardsLoading(false);
                 setIsPinging(false);
+
+                setIsMemoryCardLoading(false);
+                setIsStorageCardLoading(false);
+                setIsStatusCardLoading(false);
+                
+                stopSpinnerAnimation();
 
                 return;
             }
@@ -357,50 +607,211 @@ const CaptureScreen = ({ navigation,route }) => {
         return renderCaptureStatus();
     };
 
-    const renderImage = () => {
-        if (deviceStats.lastImage != null && deviceStats.lastImage != undefined && deviceStats.lastImage != '') {
-            return (
-                <TouchableOpacity 
-                    onPress={() => setIsImageViewerVisible(true)}
-                    style={styles.imageContainer}
-                >
-                    <Image 
-                        source={{ uri: deviceStats.lastImage }}
-                        style={styles.image}
-                        resizeMode="contain"
-                        onError={(e) => {
-                            console.error('Image loading error:', e.nativeEvent.error);
-                        }}
-                        onLoad={() => console.log('Image loaded successfully')}
-                    />
-                </TouchableOpacity>
+    // Create a proper images array for the viewer
+    const getImageForViewer = () => {
+        if (!deviceStats.lastImage) return [];
+        console.log('Image for viewer:', deviceStats.lastImage);
+        return [{
+            uri: deviceStats.lastImage,
+        }];
+    };
+
+    const handleLongPress = async () => {
+        if (!deviceStats?.lastImage) return;
+
+        try {
+            const result = await Share.share({
+                url: deviceStats.lastImage, // iOS
+                message: Platform.OS === 'android' ? deviceStats.lastImage : undefined, // Android requires message
+                title: 'View Screenshot', // Android only
+            }, {
+                // Dialog title (Android only)
+                dialogTitle: 'Open screenshot with...',
+                // Anchor for iPad
+                anchor: Platform.OS === 'ios' ? getAnchorTag() : undefined,
+            });
+
+            if (result.action === Share.sharedAction) {
+                if (result.activityType) {
+                    console.log('Shared with activity type:', result.activityType);
+                } else {
+                    console.log('Shared successfully');
+                }
+            } else if (result.action === Share.dismissedAction) {
+                console.log('Share dismissed');
+            }
+        } catch (error) {
+            console.error('Error sharing:', error);
+            setSnackbarMessage('Failed to share image');
+            setShowSnackbar(true);
+        }
+    };
+
+    // Start spinner animation
+    useEffect(() => {
+        if (isImageLoading) {
+            spinnerRotation.value = withRepeat(
+                withTiming(360, {
+                    duration: 1000,
+                    easing: Easing.linear,
+                }),
+                -1, // Infinite repetition
+                false // Don't reverse the animation
+            );
+        } else {
+            spinnerRotation.value = withSequence(
+                withTiming(360, {
+                    duration: 200,
+                    easing: Easing.linear,
+                }),
+                withTiming(0, { duration: 0 })
             );
         }
-        
+    }, [isImageLoading]);
+
+    // Animated style for spinner
+    const spinnerStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ rotate: `${spinnerRotation.value}deg` }],
+        };
+    });
+
+    const renderImageSection = () => {
         return (
-            <View style={styles.noImageContainer}>
-                <Icon name="image-off" size={48} color="#7B1FA2" />
-                <Text style={[styles.noImageText, { color: textColor }]}>
-                    No screenshot available
-                </Text>
+            <View style={styles.imageSectionContainer}>
+                <View style={styles.imageCard}>
+                    {deviceStats?.lastImage ? (
+                        <View style={styles.imageWrapper}>
+                            <Image 
+                                source={{ uri: deviceStats.lastImage }}
+                                style={styles.mainImage}
+                                resizeMode="contain"
+                                onLoadStart={() => setIsImageLoading(true)}
+                                onLoadEnd={() => setIsImageLoading(false)}
+                                onError={(e) => {
+                                    console.error('Image Error:', e.nativeEvent.error);
+                                    setIsImageLoading(false);
+                                }}
+                            />
+                            
+                            {/* Loading Spinner Overlay */}
+                            {isImageLoading && (
+                                <View style={styles.spinnerContainer}>
+                                    <Animated.View style={[styles.spinner, spinnerStyle]}>
+                                        <ActivityIndicator 
+                                            size="large" 
+                                            color="#7B1FA2"
+                                        />
+                                    </Animated.View>
+                                    <Text style={styles.loadingText}>Loading image...</Text>
+                                </View>
+                            )}
+
+                            {/* Controls */}
+                            <View style={styles.imageControls}>
+                                <TouchableOpacity 
+                                    style={styles.fullscreenButton}
+                                    onPress={() => setIsImageViewerVisible(true)}
+                                >
+                                    <Icon name="fullscreen" size={24} color="#FFFFFF" />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    ) : (
+                        <View style={styles.noImageContainer}>
+                            <Icon name="image-off" size={48} color="#7B1FA2" />
+                            <Text style={[styles.noImageText, { color: textColor }]}>
+                                No screenshot available
+                            </Text>
+                        </View>
+                    )}
+                </View>
             </View>
         );
     };
 
-    // Add reconnect handler
+    // Create animated style for reconnect button
+    const reconnectAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ scale: reconnectAnimation.value }],
+            opacity: interpolate(
+                reconnectAnimation.value,
+                [0.8, 1, 1.2],
+                [0.8, 1, 0.8]
+            ),
+        };
+    });
+
+    // Animation for reconnect button
+    const startReconnectAnimation = () => {
+        reconnectAnimation.value = withRepeat(
+            withSequence(
+                withTiming(1.2, { duration: 1000, easing: Easing.ease }),
+                withTiming(0.8, { duration: 1000, easing: Easing.ease })
+            ),
+            -1,
+            true
+        );
+    };
+
+    // Stop reconnect animation
+    const stopReconnectAnimation = () => {
+        reconnectAnimation.value = withTiming(1, { duration: 300 });
+    };
+
+    // Add reconnect handler with animation
     const handleReconnect = async () => {
+        if (isReconnecting) return;
+
         try {
-            // First try to ping the device
-            await handlePing();
+            setIsReconnecting(true);
+            startReconnectAnimation();
             
-            // Then reconnect SSE
-            SSEManager.connect();
+            // First try to ping the device
+            const pingResponse = await apiManager.pingDevice(deviceName);
+            
+            if (pingResponse?.code === 1082) {
+                setSnackbarMessage('Ping Device Event Sent Successfully');
+                setShowSnackbar(true);
+                
+                // Then reconnect SSE
+                await SSEManager.connect();
+                
+                setConnectionStatus({
+                    status: 'connected',
+                    message: 'Connected to server'
+                });
+            } else {
+                throw new Error('Ping failed');
+            }
         } catch (err) {
             console.error('Error during reconnection:', err);
-            setSnackbarMessage('Failed to reconnect');
+            setSnackbarMessage('Failed to reconnect to server');
             setShowSnackbar(true);
+            setConnectionStatus({
+                status: 'error',
+                message: 'Connection failed'
+            });
+        } finally {
+            setIsReconnecting(false);
+            stopReconnectAnimation();
         }
     };
+
+    // Render the reconnect button with animation
+    const renderReconnectButton = () => (
+        <Animated.View style={reconnectAnimatedStyle}>
+            <TouchableOpacity 
+                style={styles.reconnectButton}
+                onPress={handleReconnect}
+            >
+                <Icon name="refresh" size={20} color="#FFFFFF" />
+                <Text style={styles.reconnectStatusText}>
+                    Reconnect to Server
+                </Text>
+            </TouchableOpacity>
+        </Animated.View>
+    );
 
     // Modify the header section to include the reconnect button
     const renderHeader = () => (
@@ -428,63 +839,49 @@ const CaptureScreen = ({ navigation,route }) => {
         </View>
     );
 
-    const handlePing = async () => {
-        if (!deviceName || isPinging) return;
+    // Add logging to track state changes
+    useEffect(() => {
+        console.log("IS IMAGE VISIBLE", isImageViewerVisible)
+    }, [isImageViewerVisible]);
 
-        try {
-            setIsPinging(true); // Disable both buttons
-            setPingStatus('pinging');
+    // Add loading states for cards
+    const [isMemoryCardLoading, setIsMemoryCardLoading] = useState(false);
+    const [isStorageCardLoading, setIsStorageCardLoading] = useState(false);
+    const [isStatusCardLoading, setIsStatusCardLoading] = useState(false);
 
-            // Animation sequence
-            Animated.sequence([
-                Animated.timing(pingAnimationValue, {
-                    toValue: 1,
-                    duration: 1000,
-                    easing: Easing.ease,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(pingAnimationValue, {
-                    toValue: 0,
-                    duration: 1000,
-                    easing: Easing.ease,
-                    useNativeDriver: true,
-                })
-            ]).start();
+    // Spinner animation value
+    // const spinValue = useSharedValue(0);
 
-            const response = await apiManager.pingDevice(deviceName);
-            
-            if (response?.code === 1082) { // Assuming 1072 is success code
-                setPingStatus('success');
-                setSnackbarMessage('Device pinged successfully');
-                setShowSnackbar(true);
-            } else {
-                setPingStatus('error');
-                setSnackbarMessage('Failed to ping device');
-                setShowSnackbar(true);
-            }
-        } catch (err) {
-            console.error('Error pinging device:', err);
-            setPingStatus('error');
-            setSnackbarMessage('Error pinging device');
-            setShowSnackbar(true);
-        } finally {
-            setIsPinging(false); // Re-enable buttons
-            // Reset ping status after animation
-            setTimeout(() => setPingStatus(null), 5000);
-        }
+
+    // Start spinner animation
+    const startSpinnerAnimation = () => {
+        spinValue.value = withRepeat(
+            withTiming(360, {
+                duration: 1000,
+                easing: Easing.linear,
+            }),
+            -1
+        );
     };
 
-    const pingIconStyle = {
-        transform: [{
-            scale: pingAnimationValue.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [1, 1.2, 1]
-            })
-        }]
+    // Stop spinner animation
+    const stopSpinnerAnimation = () => {
+        cancelAnimation(spinValue);
+        spinValue.value = withTiming(0);
     };
+
+    // Add loading spinner component
+    const LoadingSpinner = () => (
+        <Animated.View style={[styles.spinnerOverlay, spinnerStyle]}>
+            <ActivityIndicator color="#7B1FA2" size="small" />
+        </Animated.View>
+    );
 
     return (
-        <View style={[styles.container, { backgroundColor: bgColor }]}>
+        <LinearGradient
+            colors={colorScheme === 'dark' ? gradientColors.dark : gradientColors.light}
+            style={styles.container}
+        >
             {renderStatus()}
             
             {/* Only show loading if device is online and loading */}
@@ -507,7 +904,7 @@ const CaptureScreen = ({ navigation,route }) => {
                                 style={styles.image}
                             /> */}
 
-                                {renderImage()}
+                                {renderImageSection()}
                             
                         </View>
                     </View>
@@ -530,6 +927,7 @@ const CaptureScreen = ({ navigation,route }) => {
                                         color={deviceInfo?.isOnline ? "#4CAF50" : "#FF5252"} 
                                     />
                                     <Text style={[styles.statLabel, { color: textColor }]}>Status</Text>
+                                    {isStatusCardLoading && <LoadingSpinner />}
                                     <Text style={[styles.statValue, { color: deviceInfo?.isOnline ? "#4CAF50" : "#FF5252" }]}>
                                         {deviceInfo?.isOnline ? 'Online' : 'Offline'}
                                     </Text>
@@ -562,6 +960,7 @@ const CaptureScreen = ({ navigation,route }) => {
                                     <Text style={[styles.statValue, { color: textColor, marginBottom: 8 }]}>
                                         {storageData.getFormattedUsed()}
                                     </Text>
+                                    {isStorageCardLoading && <LoadingSpinner />}
                                     <View style={styles.progressBarContainer}>
                                         <ProgressBar
                                             progress={storageData.getPercentage()}
@@ -589,6 +988,7 @@ const CaptureScreen = ({ navigation,route }) => {
                                     <Text style={[styles.statValue, { color: textColor, marginBottom: 8 }]}>
                                         {memoryData.getFormattedUsage()}
                                     </Text>
+                                    {isMemoryCardLoading && <LoadingSpinner />}
                                     <View style={styles.progressBarContainer}>
                                         <ProgressBar
                                             progress={memoryData.getPercentage()}
@@ -602,7 +1002,7 @@ const CaptureScreen = ({ navigation,route }) => {
                     </ScrollView>
 
                     {/* Capture Button - Fixed at bottom */}
-                    <View style={[styles.actionButtonsContainer, { backgroundColor: bgColor }]}>
+                    <View style={[styles.actionButtonsContainer]}>
                         {/* Ping Button */}
                         <TouchableOpacity 
                             style={[
@@ -611,7 +1011,7 @@ const CaptureScreen = ({ navigation,route }) => {
                                 (isPinging || isCapturing) && styles.actionButtonDisabled
                             ]}
                             onPress={handlePing}
-                            disabled={ isPinging || isCapturing}
+                            disabled={isPinging || isCapturing}
                         >
                             <Animated.View style={pingIconStyle}>
                                 <Icon 
@@ -652,32 +1052,72 @@ const CaptureScreen = ({ navigation,route }) => {
             )}
             
             {/* New Image Viewer */}
-            <ImageViewing
-                images={[{ uri: deviceStats.lastImage }]}
-                imageIndex={0}
-                visible={isImageViewerVisible}
-                onRequestClose={() => setIsImageViewerVisible(false)}
-                backgroundColor="rgba(0,0,0,0.9)"
-                FooterComponent={({ imageIndex }) => (
+            {/* {isImageViewerVisible == true && ( */}
+                <ImageViewing
+                    images={getImageForViewer()}
+                    imageIndex={0}
+                    visible={isImageViewerVisible}
+                    onRequestClose={() => {
+                        console.log('Closing image viewer from onRequestClose');
+                        setIsImageViewerVisible(false);
+                    }}
+                // backgroundColor="rgba(0, 0, 0, 0.95)"
+                presentationStyle="fullScreen"
+                animationType="fade"
+                FooterComponent={() => (
                     <View style={styles.imageViewerFooter}>
-                        <Text style={styles.imageViewerText}>Screenshot</Text>
+                        <TouchableOpacity 
+                            style={styles.closeButton}
+                            onPress={() => {
+                                console.log('Closing image viewer');
+                                setIsImageViewerVisible(false);
+                            }}
+                        >
+                            <Icon name="close" size={24} color="#FFFFFF" />
+                            <Text style={styles.closeButtonText}>Close</Text>
+                        </TouchableOpacity>
                     </View>
                 )}
             />
+            {/* )} */}
 
             <Snackbar
                 visible={showSnackbar}
                 onDismiss={() => setShowSnackbar(false)}
-                duration={2000}
-                style={styles.snackbar}
+                duration={3000}
+                style={[
+                    styles.snackbar,
+                    {
+                        backgroundColor: getSnackbarTheme().background,
+                    },
+                    colorScheme === 'dark' && styles.snackbarDark
+                ]}
                 action={{
                     label: 'Dismiss',
                     onPress: () => setShowSnackbar(false),
+                    labelStyle: {
+                        color: getSnackbarTheme().action,
+                        fontWeight: '600',
+                        fontSize: 14,
+                    }
                 }}
             >
-                {snackbarMessage}
+                <View style={styles.snackbarContent}>
+                    <Icon 
+                        name={snackbarMessage.toLowerCase().includes('error') ? 'alert-circle' : 'check-circle'} 
+                        size={24} 
+                        color={getSnackbarTheme().text} 
+                        style={styles.snackbarIcon}
+                    />
+                    <Text style={[
+                        styles.snackbarText,
+                        { color: getSnackbarTheme().text }
+                    ]}>
+                        {snackbarMessage}
+                    </Text>
+                </View>
             </Snackbar>
-        </View>
+        </LinearGradient>
     );
 };
 
@@ -840,18 +1280,60 @@ const styles = StyleSheet.create({
     },
     imageContainer: {
         flex: 1,
+        position: 'relative',
+        borderRadius: 12,
+        overflow: 'hidden',
+        backgroundColor: 'rgba(0,0,0,0.05)',
+    },
+    image: {
+        flex: 1,
         width: '100%',
         height: '100%',
+        backgroundColor: 'transparent',
+    },
+    fullscreenButton: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 8,
+        padding: 8,
+        zIndex: 1,
+    },
+    fullscreenButtonContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    fullscreenButtonText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600',
     },
     imageViewerFooter: {
         height: 64,
         backgroundColor: 'rgba(0,0,0,0.6)',
         alignItems: 'center',
         justifyContent: 'center',
+        flexDirection: 'row',
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
     },
-    imageViewerText: {
-        color: '#FFF',
+    closeButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 8,
+    },
+    closeButtonText: {
+        color: '#FFFFFF',
         fontSize: 16,
+        fontWeight: '600',
+        marginLeft: 8,
     },
     reconnectButton: {
         backgroundColor: '#7B1FA2',
@@ -944,7 +1426,120 @@ const styles = StyleSheet.create({
         backgroundColor: '#7B1FA2',
     },
     snackbar: {
-        backgroundColor: '#4CAF50',
+        borderRadius: 12,
+        marginBottom: 24,
+        marginHorizontal: 16,
+        elevation: 6,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 3,
+        },
+        shadowOpacity: 0.27,
+        shadowRadius: 4.65,
+    },
+    snackbarDark: {
+        borderWidth: 1,
+        borderColor: 'rgba(156, 39, 176, 0.1)',
+        shadowColor: 'rgba(156, 39, 176, 0.3)',
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
+    },
+    snackbarContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 4,
+    },
+    snackbarIcon: {
+        marginRight: 12,
+    },
+    snackbarText: {
+        fontSize: 15,
+        fontWeight: '500',
+        letterSpacing: 0.3,
+        flex: 1,
+    },
+    imageSectionContainer: {
+        padding: 16,
+    },
+    imageCard: {
+        height: 300,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 12,
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    imageWrapper: {
+        flex: 1,
+        position: 'relative',
+    },
+    mainImage: {
+        width: '100%',
+        height: '100%',
+    },
+    hintContainer: {
+        position: 'absolute',
+        bottom: 12,
+        left: 12,
+        right: 12,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        padding: 8,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    hintText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    spinnerContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    spinner: {
+        width: 50,
+        height: 50,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        color: '#FFFFFF',
+        marginTop: 12,
+        fontSize: 14,
+        fontWeight: '600',
+        textShadowColor: 'rgba(0,0,0,0.5)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 2,
+    },
+    imageControls: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        flexDirection: 'row',
+        gap: 8,
+    },
+    spinnerOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 12,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        zIndex: 1,
     },
 });
 

@@ -16,6 +16,25 @@ class SSEManager {
         return SSEManager.instance;
     }
 
+    subscribe(deviceName, callback) {
+        if (!this.eventSource) {
+            console.log('No EventSource available');
+            return;
+        }
+
+        const handler = (event) => {
+            if (event.data) {
+                callback(event);
+            }
+        };
+
+        this.eventSource.addEventListener('message', handler);
+
+        return () => {
+            this.eventSource.removeEventListener('message', handler);
+        };
+    }
+
     connect() {
         if (this.eventSource) {
             this.disconnect();
