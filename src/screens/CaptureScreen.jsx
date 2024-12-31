@@ -426,6 +426,12 @@ const CaptureScreen = ({ navigation,route }) => {
             setCaptureStatus('capturing');
             setCaptureMessage('Initiating screen capture...');
 
+            setIsCardsLoading(true);
+            setIsMemoryCardLoading(true);
+            setIsStorageCardLoading(true);
+            setIsStatusCardLoading(true);
+            startSpinnerAnimation();
+            
             const response = await apiManager.captureScreen(deviceId, deviceName);
             console.log('Capture API response:', response);
 
