@@ -5,9 +5,7 @@ import { Snackbar, Card, ProgressBar } from 'react-native-paper';
 // import {  Easing } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import SSEManager from '../services/SSEManager';
-import ImageViewing from 'react-native-image-viewing';
 import LinearGradient from 'react-native-linear-gradient';
-import MaskedView from '@react-native-masked-view/masked-view';
 import Animated, { 
     useSharedValue,
     withRepeat,
@@ -18,7 +16,7 @@ import Animated, {
     Easing,
     cancelAnimation,
 } from 'react-native-reanimated';
-
+import ImageView from "react-native-image-viewing";
 LogBox.ignoreLogs([
   '[Reanimated] Reduced motion setting is enabled on this device.',
 ]);
@@ -145,6 +143,7 @@ const CaptureScreen = ({ navigation,route }) => {
             setIsStatusCardLoading(true);
             startSpinnerAnimation();
 
+           
             const response = await apiManager.pingDevice(deviceName);
             console.log('Ping response:', response);
 
@@ -159,6 +158,10 @@ const CaptureScreen = ({ navigation,route }) => {
                 // Stop loading only on error
                 setIsCardsLoading(false);
                 stopSpinnerAnimation();
+                setIsMemoryCardLoading(false);
+                setIsStorageCardLoading(false);
+                setIsStatusCardLoading(false);
+                setIsPinging(false);
             }
         } catch (error) {
             console.error('Ping error:', error);
@@ -166,10 +169,26 @@ const CaptureScreen = ({ navigation,route }) => {
             setSnackbarMessage('Failed to send Ping Device Event');
             // Stop loading on error
             setIsCardsLoading(false);
+            setIsMemoryCardLoading(false);
+            setIsStorageCardLoading(false);
+            setIsStatusCardLoading(false);
             stopSpinnerAnimation();
+            setIsPinging(false);
         } finally {
             // setIsPinging(false);
             setShowSnackbar(true);
+            const loadingTimeout = setTimeout(() => {
+                setIsCardsLoading(false);
+                setIsMemoryCardLoading(false);
+                setIsStorageCardLoading(false);
+                setIsStatusCardLoading(false);
+                setDeviceStats({...deviceStats, isOnline: false});
+                setCaptureStatus('error');
+                setCaptureMessage('Ping timed out after 15 seconds');
+            }, 15000);
+
+            // Clear the timeout if component unmounts
+            return () => clearTimeout(loadingTimeout);
         }
     };
 
@@ -446,6 +465,18 @@ const CaptureScreen = ({ navigation,route }) => {
             setError('Failed to initiate screen capture');
         } finally {
             setIsCapturing(false); // Re-enable buttons
+            // Set a timeout to stop loading states after 15 seconds
+            const loadingTimeout = setTimeout(() => {
+                setIsCardsLoading(false);
+                setIsMemoryCardLoading(false);
+                setIsStorageCardLoading(false);
+                setIsStatusCardLoading(false);
+                setCaptureStatus('error');
+                setCaptureMessage('Capture timed out after 15 seconds');
+            }, 15000);
+
+            // Clear the timeout if component unmounts
+            return () => clearTimeout(loadingTimeout);
         }
     };
 
@@ -615,12 +646,18 @@ const CaptureScreen = ({ navigation,route }) => {
 
     // Create a proper images array for the viewer
     const getImageForViewer = () => {
-        if (!deviceStats.lastImage) return [];
+        if (!deviceStats.lastImage) {
+            console.log('No image for viewer');
+            return [];
+        }
+            
         console.log('Image for viewer:', deviceStats.lastImage);
         return [{
             uri: deviceStats.lastImage,
         }];
     };
+
+    
 
     const handleLongPress = async () => {
         if (!deviceStats?.lastImage) return;
@@ -775,7 +812,7 @@ const CaptureScreen = ({ navigation,route }) => {
             
             // First try to ping the device
             const pingResponse = await apiManager.pingDevice(deviceName);
-            
+             
             if (pingResponse?.code === 1082) {
                 setSnackbarMessage('Ping Device Event Sent Successfully');
                 setShowSnackbar(true);
@@ -791,16 +828,23 @@ const CaptureScreen = ({ navigation,route }) => {
                 throw new Error('Ping failed');
             }
         } catch (err) {
-            console.error('Error during reconnection:', err);
+            console.log('Error during reconnection:', err);
             setSnackbarMessage('Failed to reconnect to server');
             setShowSnackbar(true);
             setConnectionStatus({
                 status: 'error',
                 message: 'Connection failed'
             });
+            setIsCardsLoading(false);
+            setIsStatusCardLoading(false);
+            setIsMemoryCardLoading(false);
+            setIsStorageCardLoading(false);
+            setIsPinging(false);
+            setIsCapturing(false);
         } finally {
             setIsReconnecting(false);
             stopReconnectAnimation();
+       
         }
     };
 
@@ -1019,7 +1063,7 @@ const CaptureScreen = ({ navigation,route }) => {
                             onPress={handlePing}
                             disabled={isPinging || isCapturing}
                         >
-                            <Animated.View style={pingIconStyle}>
+                             
                                 <Icon 
                                     name={
                                         isPinging ? "access-point-network" : 
@@ -1029,7 +1073,7 @@ const CaptureScreen = ({ navigation,route }) => {
                                     size={24} 
                                     color="#FFFFFF" 
                                 />
-                            </Animated.View>
+                           
                             <Text style={styles.actionButtonText}>
                                 {isPinging ? 'Pinging...' : 'Ping'}
                             </Text>
@@ -1059,7 +1103,7 @@ const CaptureScreen = ({ navigation,route }) => {
             
             {/* New Image Viewer */}
             {/* {isImageViewerVisible == true && ( */}
-                <ImageViewing
+                {/* <ImageViewing
                     images={getImageForViewer()}
                     imageIndex={0}
                     visible={isImageViewerVisible}
@@ -1067,24 +1111,25 @@ const CaptureScreen = ({ navigation,route }) => {
                         console.log('Closing image viewer from onRequestClose');
                         setIsImageViewerVisible(false);
                     }}
-                // backgroundColor="rgba(0, 0, 0, 0.95)"
-                presentationStyle="fullScreen"
-                animationType="fade"
-                FooterComponent={() => (
-                    <View style={styles.imageViewerFooter}>
-                        <TouchableOpacity 
-                            style={styles.closeButton}
-                            onPress={() => {
-                                console.log('Closing image viewer');
-                                setIsImageViewerVisible(false);
-                            }}
-                        >
-                            <Icon name="close" size={24} color="#FFFFFF" />
-                            <Text style={styles.closeButtonText}>Close</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-            />
+                    // backgroundColor="rgba(0, 0, 0, 0.95)"
+                    presentationStyle="fullScreen"
+                    animationType="fade"
+                    FooterComponent={() => (
+                        <View style={styles.imageViewerFooter}>
+                            <TouchableOpacity 
+                                style={styles.closeButton}
+                                onPress={() => {
+                                    console.log('Closing image viewer');
+                                    setIsImageViewerVisible(false);
+                                }}
+                            >
+                                <Icon name="close" size={24} color="#FFFFFF" />
+                                <Text style={styles.closeButtonText}>Close</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                /> */}
+              
             {/* )} */}
 
             <Snackbar
@@ -1123,6 +1168,14 @@ const CaptureScreen = ({ navigation,route }) => {
                     </Text>
                 </View>
             </Snackbar>
+            <ImageView 
+                images={getImageForViewer()}
+                imageIndex={0}
+                visible={isImageViewerVisible}
+                onRequestClose={() => {
+                    setIsImageViewerVisible(false);
+                }} 
+            />
         </LinearGradient>
     );
 };

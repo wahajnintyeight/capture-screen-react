@@ -9,6 +9,7 @@ import { PaperProvider } from 'react-native-paper';
 import CaptureScreen from './src/screens/CaptureScreen';
 import 'react-native-gesture-handler'
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import TestImage from './src/screens/TestImage';
 
 const Stack = createNativeStackNavigator();
 
@@ -27,6 +28,7 @@ const App = () => {
               <Stack.Screen name="Landing" component={LandingScreen} />
               <Stack.Screen name="Home" component={Home} />
               <Stack.Screen name="Capture" component={CaptureScreen} />
+              <Stack.Screen name="TestImage" component={TestImage} />
             </Stack.Navigator>
           </SafeAreaView>
         </NavigationContainer>
