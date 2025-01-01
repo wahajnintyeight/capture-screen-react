@@ -5,7 +5,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
-  Dimensions
+  Dimensions,
+  ImageBackground,
+  Image,
+  ImageBackgroundBase
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -14,28 +17,39 @@ const LandingScreen = ({ navigation }) => {
   console.log('LandingScreen');
   
   return (
-    <LinearGradient 
-      colors={['#7B1FA2', '#4A148C', '#1A0033']}
-      style={styles.background}
-    >
+    <View style={styles.background}>
+      <ImageBackground 
+        source={require('../assets/landing.gif')}
+        style={[styles.backgroundImage, styles.absoluteFill]}
+        resizeMode="cover"
+      />
+      <LinearGradient 
+        colors={['#7B1FA2', '#4A148C', '#1A0033']}
+        style={[styles.gradientOverlay, styles.absoluteFill]}
+      />
       <View style={styles.contentContainer}>
         <View style={styles.windowContainer}>
           <View style={{padding: 10}}>
-            <Text style={{fontSize: 44, color: 'white', textAlign: 'center', fontWeight: 'bold', marginBottom: 10}}>
-              Monitor Your Screen
+            <Text style={{
+              fontSize: 44, 
+              color: 'white', 
+              textAlign: 'center', 
+              fontWeight: 'bold', 
+              marginBottom: 10,
+              fontFamily: 'Roboto'
+            }}>
+              Screen Monitoring Made Easy
             </Text>
           </View>
         </View>
         <TouchableOpacity style={styles.button} onPress={() => {
-          
           console.log('Start Capturing');
           navigation.navigate('Home',{screen: 'Home'});
         }}>
-          <Text style={styles.buttonText}>Start Capturing</Text>
+          <Text style={[styles.buttonText, {fontFamily: 'Roboto'}]}>Begin Monitoring</Text>
         </TouchableOpacity>
       </View>
-    </LinearGradient>
-
+    </View>
   );
 };
 
@@ -110,6 +124,20 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'black',
     textTransform: 'uppercase',
+  },
+  absoluteFill: {
+   
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  backgroundImage: {
+    opacity: 0.9,
+  },
+  gradientOverlay: {
+    opacity: 0.55,
   },
 });
 

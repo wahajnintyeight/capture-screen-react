@@ -75,13 +75,13 @@ def jscFlavor = 'org.webkit:android-jsc:+'
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
-    compileSdk rootProject.ext.compileSdkVersion
+    compileSdk 34
 
     namespace "com.capturescreen"
     defaultConfig {
         applicationId "com.capturescreen"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdkVersion 24
+        targetSdkVersion 34
         versionCode 1
         versionName "1.0"
     }
@@ -117,5 +117,10 @@ dependencies {
         implementation jscFlavor
     }
     implementation project(':react-native-vector-icons')
+    // For animated GIF support
+    implementation 'com.facebook.fresco:fresco:3.5.0'
+    implementation 'com.facebook.fresco:animated-gif:3.5.0'
+
+
 }
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
