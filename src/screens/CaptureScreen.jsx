@@ -1011,13 +1011,13 @@ const CaptureScreen = ({ navigation,route }) => {
                                         {storageData.getFormattedUsed()}
                                     </Text>
                                     {isStorageCardLoading && <LoadingSpinner />}
-                                    <View style={styles.progressBarContainer}>
+                                    {/* <View style={styles.progressBarContainer}>
                                         <ProgressBar
                                             progress={storageData.getPercentage()}
                                             color="#7B1FA2"
                                             style={styles.progressBar}
                                         />
-                                    </View>
+                                    </View> */}
                                 </View>
                             </View>
 
@@ -1039,13 +1039,13 @@ const CaptureScreen = ({ navigation,route }) => {
                                         {memoryData.getFormattedUsage()}
                                     </Text>
                                     {isMemoryCardLoading && <LoadingSpinner />}
-                                    <View style={styles.progressBarContainer}>
+                                    {/* <View style={styles.progressBarContainer}>
                                         <ProgressBar
                                             progress={memoryData.getPercentage()}
                                             color="#7B1FA2"
                                             style={styles.progressBar}
                                         />
-                                    </View>
+                                    </View> */}
                                 </View>
                             </View>
                         </View>

@@ -31,7 +31,9 @@ class SSEManager {
         this.eventSource.addEventListener('message', handler);
 
         return () => {
-            this.eventSource.removeEventListener('message', handler);
+            if(this.eventSource !== null && this.eventSource.removeEventListener !== undefined){
+                this.eventSource.removeEventListener('message', handler);
+            }
         };
     }
 
